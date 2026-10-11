@@ -1,0 +1,58 @@
+'use client'
+
+import ProductCard from './ProductCard'
+import { Product } from '@/types/product'
+
+interface ProductGridProps {
+  products: Product[]
+  onAddToCart?: (product: Product) => void
+  onFavoriteToggle?: (productId: string | number) => void
+  columns?: 'auto' | 1 | 2 | 3 | 4
+  gap?: 'small' | 'medium' | 'large'
+}
+
+const columnClasses = {
+  auto: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4',
+  1: 'grid-cols-1',
+  2: 'grid-cols-1 sm:grid-cols-2',
+  3: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3',
+  4: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4',
+}
+
+const gapClasses = {
+  small: 'gap-4',
+  medium: 'gap-6',
+  large: 'gap-8',
+}
+
+export default function ProductGrid({
+  products,
+  onAddToCart,
+  onFavoriteToggle,
+  columns = 'auto',
+  gap = 'medium',
+}: ProductGridProps) {
+  if (products.length === 0) {
+    return (
+      <div className="flex min-h-96 items-center justify-center">
+        <div className="text-center">
+          <p className="text-lg font-semibold text-gray-900">No products found</p>
+          <p className="mt-2 text-sm text-gray-600">Try adjusting your filters</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className={`grid ${columnClasses[columns]} ${gapClasses[gap]}`}>
+      {products.map((product) => (
+        <ProductCard
+          key={product.id}
+          product={product}
+          onAddToCart={onAddToCart}
+          onFavoriteToggle={onFavoriteToggle}
+        />
+      ))}
+    </div>
+  )
+}
