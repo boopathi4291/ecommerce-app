@@ -2,13 +2,18 @@
 
 import ProductCard from './ProductCard'
 import { Product } from '@/types/product'
+import { Language } from '@/lib/locales'
 
 interface ProductGridProps {
   products: Product[]
-  onAddToCart?: (product: Product) => void
-  onFavoriteToggle?: (productId: string | number) => void
+  onAddToCart?: (product: Product) => boolean | void
+  onBuyNow?: (product: Product) => void
+  onFavoriteToggle?: (productId: string | number) => boolean | void
   columns?: 'auto' | 1 | 2 | 3 | 4
   gap?: 'small' | 'medium' | 'large'
+  currency?: string
+  locale?: string
+  language?: Language
 }
 
 const columnClasses = {
@@ -28,9 +33,13 @@ const gapClasses = {
 export default function ProductGrid({
   products,
   onAddToCart,
+  onBuyNow,
   onFavoriteToggle,
   columns = 'auto',
   gap = 'medium',
+  currency,
+  locale,
+  language,
 }: ProductGridProps) {
   if (products.length === 0) {
     return (
@@ -50,7 +59,11 @@ export default function ProductGrid({
           key={product.id}
           product={product}
           onAddToCart={onAddToCart}
+          onBuyNow={onBuyNow}
           onFavoriteToggle={onFavoriteToggle}
+          currency={currency}
+          locale={locale}
+          language={language}
         />
       ))}
     </div>

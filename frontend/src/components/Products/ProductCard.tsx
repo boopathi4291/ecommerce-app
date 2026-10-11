@@ -1,40 +1,57 @@
 'use client'
 
 import { useState } from 'react'
-import { Heart, ShoppingCart, Star } from 'lucide-react'
+import Link from 'next/link'
+import { Heart, ShoppingBag, ShoppingCart, Star } from 'lucide-react'
 import { Product } from '@/types/product'
+import { formatCurrency } from '@/lib/formatCurrency'
+import { Language, storeLabels, translateCategory } from '@/lib/locales'
 
 interface ProductCardProps {
   product: Product
-  onAddToCart?: (product: Product) => void
-  onFavoriteToggle?: (productId: string | number) => void
+  onAddToCart?: (product: Product) => boolean | void
+  onBuyNow?: (product: Product) => void
+  onFavoriteToggle?: (productId: string | number) => boolean | void
   showRating?: boolean
   showStock?: boolean
+  currency?: string
+  locale?: string
+  language?: Language
 }
 
 export default function ProductCard({
   product,
   onAddToCart,
+  onBuyNow,
   onFavoriteToggle,
   showRating = true,
   showStock = true,
+  currency = 'INR',
+  locale = 'en-IN',
+  language = 'en',
 }: ProductCardProps) {
+  const labels = storeLabels[language]
   const [isFavorite, setIsFavorite] = useState(product.isFavorite || false)
   const [isAdding, setIsAdding] = useState(false)
 
   const handleFavoriteClick = () => {
-    setIsFavorite(!isFavorite)
-    onFavoriteToggle?.(product.id)
+    const allowed = onFavoriteToggle?.(product.id)
+    if (allowed !== false) setIsFavorite(!isFavorite)
   }
 
   const handleAddToCart = async () => {
     setIsAdding(true)
     try {
-      onAddToCart?.(product)
-      await new Promise((resolve) => setTimeout(resolve, 500))
+      const added = onAddToCart?.(product)
+      if (added !== false) await new Promise((resolve) => setTimeout(resolve, 500))
     } finally {
       setIsAdding(false)
     }
+  }
+
+  const handleBuyNow = () => {
+    if (onBuyNow) onBuyNow(product)
+    else onAddToCart?.(product)
   }
 
   const discountPercentage =
@@ -50,11 +67,13 @@ export default function ProductCard({
   return (
     <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:shadow-lg">
       <div className="relative aspect-square overflow-hidden bg-gray-100">
-        <img
-          src={product.image}
-          alt={product.name}
-          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-110"
-        />
+        <Link href={`/products/${product.id}`} aria-label={`View ${product.name} details`} className="block h-full w-full">
+          <img
+            src={product.image}
+            alt={product.name}
+            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-110"
+          />
+        </Link>
 
         <button
           onClick={handleFavoriteClick}
@@ -73,7 +92,7 @@ export default function ProductCard({
         )}
 
         {discountPercentage && discountPercentage > 0 && (
-          <div className="absolute left-3 top-3 rounded-full bg-orange-500 px-3 py-1 text-xs font-semibold text-white">
+          <div className={`absolute left-3 ${product.badge ? 'top-12' : 'top-3'} rounded-full bg-orange-500 px-3 py-1 text-xs font-semibold text-white`}>
             -{discountPercentage}%
           </div>
         )}
@@ -87,11 +106,13 @@ export default function ProductCard({
 
       <div className="p-4">
         <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
-          {product.category}
+          {translateCategory(product.category, language)}
         </p>
 
         <h3 className="mt-2 line-clamp-2 font-semibold text-gray-900 hover:text-blue-600">
-          {product.name}
+          <Link href={`/products/${product.id}`}>
+            {product.name}
+          </Link>
         </h3>
 
         {showRating && product.rating !== undefined && (
@@ -116,20 +137,20 @@ export default function ProductCard({
         )}
 
         <div className="mt-3 flex items-baseline gap-2">
-          <span className="text-xl font-bold text-gray-900">₹{product.price}</span>
+          <span className="text-xl font-bold text-gray-900">{formatCurrency(product.price, currency, locale)}</span>
           {product.originalPrice && product.originalPrice > product.price && (
-            <span className="text-sm text-gray-400 line-through">₹{product.originalPrice}</span>
+            <span className="text-sm text-gray-400 line-through">{formatCurrency(product.originalPrice, currency, locale)}</span>
           )}
         </div>
 
         {showStock && (
           <div className="mt-2">
             {isOutOfStock ? (
-              <p className="text-xs font-medium text-red-600">Out of Stock</p>
+              <p className="text-xs font-medium text-red-600">{labels.outOfStock}</p>
             ) : product.stock < 5 ? (
-              <p className="text-xs font-medium text-orange-600">Only {product.stock} left</p>
+              <p className="text-xs font-medium text-orange-600">{labels.lowStock.replace('{count}', String(product.stock))}</p>
             ) : (
-              <p className="text-xs font-medium text-green-600">In Stock</p>
+              <p className="text-xs font-medium text-green-600">{labels.inStock}</p>
             )}
           </div>
         )}
@@ -140,7 +161,15 @@ export default function ProductCard({
           className="mt-4 w-full flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <ShoppingCart className="h-5 w-5" />
-          {isAdding ? 'Adding...' : 'Add to Cart'}
+          {isAdding ? labels.adding : labels.addToCart}
+        </button>
+        <button
+          onClick={handleBuyNow}
+          disabled={isOutOfStock || isAdding}
+          className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-[#294334] bg-[#294334] px-4 py-2.5 font-semibold text-white transition hover:bg-[#1e3327] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <ShoppingBag className="h-5 w-5" />
+          {labels.buyNow}
         </button>
       </div>
     </div>

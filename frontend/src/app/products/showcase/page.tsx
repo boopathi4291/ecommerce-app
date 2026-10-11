@@ -3,7 +3,7 @@
 import ProductShowcase from '@/components/Products/ProductShowcase'
 import { mockProducts } from '@/data/mockProducts'
 
-const bestSellers = mockProducts.filter((p) => p.badge === 'Best Seller' || p.rating > 4.5)
+const bestSellers = mockProducts.filter((p) => p.badge === 'Best Seller' || (p.rating ?? 0) > 4.5)
 const newProducts = mockProducts.filter((p) => p.badge === 'New')
 const onSale = mockProducts.filter((p) => p.originalPrice && p.originalPrice > p.price)
 

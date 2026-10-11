@@ -1,14 +1,45 @@
 'use client'
 
-import { useState } from 'react'
-import { Heart, ShoppingCart, Star, Share2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Heart, ShoppingCart, Star, Share2, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { mockProducts } from '@/data/mockProducts'
+import { Product } from '@/types/product'
+import { getDemoSession } from '@/lib/demoAuth'
+import { usePathname } from 'next/navigation'
+import AuthPrompt from '@/components/AuthPrompt'
 
 export default function ProductDetailsPage({ params }: { params: { slug: string } }) {
+  const pathname = usePathname()
   const product = mockProducts.find((p) => p.id.toString() === params.slug) || mockProducts[0]
   const [quantity, setQuantity] = useState(1)
   const [isFavorite, setIsFavorite] = useState(false)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [authPromptOpen, setAuthPromptOpen] = useState(false)
+  const [cartMessage, setCartMessage] = useState('')
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
+  const [isImageModalOpen, setIsImageModalOpen] = useState(false)
+  const productImages = product.images?.length ? product.images : [product.image]
+
+  useEffect(() => {
+    setIsAuthenticated(Boolean(getDemoSession()))
+  }, [])
+
+  useEffect(() => {
+    if (!isImageModalOpen) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsImageModalOpen(false)
+      if (productImages.length > 1 && event.key === 'ArrowRight') {
+        setSelectedImageIndex((current) => (current + 1) % productImages.length)
+      }
+      if (productImages.length > 1 && event.key === 'ArrowLeft') {
+        setSelectedImageIndex((current) => (current - 1 + productImages.length) % productImages.length)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isImageModalOpen, productImages.length])
 
   const relatedProducts = mockProducts.filter(
     (p) => p.category === product.category && p.id !== product.id
@@ -20,6 +51,26 @@ export default function ProductDetailsPage({ params }: { params: { slug: string 
           ((product.originalPrice - product.price) / product.originalPrice) * 100
         )
       : 0
+
+  const handleAddToCart = () => {
+    if (!isAuthenticated) {
+      setAuthPromptOpen(true)
+      return
+    }
+
+    let cart: { product: Product; quantity: number }[] = []
+    try {
+      cart = JSON.parse(sessionStorage.getItem('atelier.demo.cart') || '[]') as { product: Product; quantity: number }[]
+    } catch {
+      cart = []
+    }
+    const existingLine = cart.find((line) => line.product.id === product.id)
+    const updatedCart = existingLine
+      ? cart.map((line) => line.product.id === product.id ? { ...line, quantity: line.quantity + quantity } : line)
+      : [...cart, { product, quantity }]
+    sessionStorage.setItem('atelier.demo.cart', JSON.stringify(updatedCart))
+    setCartMessage(`${product.name} added to your cart.`)
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -35,11 +86,13 @@ export default function ProductDetailsPage({ params }: { params: { slug: string 
           {/* Image Gallery */}
           <div className="space-y-4">
             <div className="relative overflow-hidden rounded-2xl bg-gray-100 aspect-square">
-              <img
-                src={product.image}
-                alt={product.name}
-                className="h-full w-full object-cover"
-              />
+              <button type="button" onClick={() => setIsImageModalOpen(true)} aria-label={`View ${product.name} image larger`} className="block h-full w-full cursor-zoom-in">
+                <img
+                  src={productImages[selectedImageIndex]}
+                  alt={product.name}
+                  className="h-full w-full object-cover"
+                />
+              </button>
               {discountPercentage > 0 && (
                 <div className="absolute left-4 top-4 rounded-full bg-red-500 px-3 py-1 text-sm font-bold text-white">
                   -{discountPercentage}%
@@ -47,13 +100,18 @@ export default function ProductDetailsPage({ params }: { params: { slug: string 
               )}
             </div>
             <div className="flex gap-2">
-              {[...Array(4)].map((_, i) => (
+              {productImages.map((image, i) => (
                 <button
                   key={i}
-                  className="h-20 w-20 overflow-hidden rounded-lg border-2 border-gray-300 hover:border-blue-600"
+                  onClick={() => {
+                    setSelectedImageIndex(i)
+                    setIsImageModalOpen(true)
+                  }}
+                  aria-label={`View image ${i + 1} larger`}
+                  className={`h-20 w-20 overflow-hidden rounded-lg border-2 ${selectedImageIndex === i ? 'border-blue-600' : 'border-gray-300 hover:border-blue-600'}`}
                 >
                   <img
-                    src={product.image}
+                    src={image}
                     alt={`View ${i + 1}`}
                     className="h-full w-full object-cover"
                   />
@@ -134,6 +192,7 @@ export default function ProductDetailsPage({ params }: { params: { slug: string 
 
               <div className="flex gap-4">
                 <button
+                  onClick={handleAddToCart}
                   disabled={product.stock === 0}
                   className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50"
                 >
@@ -141,7 +200,14 @@ export default function ProductDetailsPage({ params }: { params: { slug: string 
                   Add to Cart
                 </button>
                 <button
-                  onClick={() => setIsFavorite(!isFavorite)}
+                  onClick={() => {
+                    if (!isAuthenticated) {
+                      setAuthPromptOpen(true)
+                      return
+                    }
+                    setIsFavorite(!isFavorite)
+                  }}
+                  aria-label={isFavorite ? 'Remove from wishlist' : 'Add to wishlist'}
                   className="px-6 py-3 border border-gray-300 rounded-lg hover:bg-gray-100 flex items-center justify-center"
                 >
                   <Heart
@@ -152,6 +218,7 @@ export default function ProductDetailsPage({ params }: { params: { slug: string 
                   <Share2 className="h-5 w-5 text-gray-600" />
                 </button>
               </div>
+              {cartMessage && <p role="status" className="text-sm text-green-700">{cartMessage}</p>}
             </div>
 
             {/* Description */}
@@ -163,6 +230,32 @@ export default function ProductDetailsPage({ params }: { params: { slug: string 
             </div>
           </div>
         </div>
+
+        {isImageModalOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 sm:p-8"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${product.name} image gallery`}
+            onClick={() => setIsImageModalOpen(false)}
+          >
+            <button type="button" onClick={() => setIsImageModalOpen(false)} aria-label="Close image gallery" className="absolute right-4 top-4 z-10 rounded-full bg-white/10 p-2 text-white hover:bg-white/20">
+              <X size={24} />
+            </button>
+            <div className="flex h-full w-full max-w-6xl flex-col items-center justify-center gap-4" onClick={(event) => event.stopPropagation()}>
+              <div className="flex min-h-0 w-full flex-1 items-center justify-center gap-2 sm:gap-6">
+                {productImages.length > 1 && <button type="button" onClick={() => setSelectedImageIndex((current) => (current - 1 + productImages.length) % productImages.length)} aria-label="Previous image" className="rounded-full bg-white/10 p-2 text-white hover:bg-white/20"><ChevronLeft size={28} /></button>}
+                <img src={productImages[selectedImageIndex]} alt={`${product.name}, image ${selectedImageIndex + 1} of ${productImages.length}`} className="max-h-[78vh] max-w-[calc(100%-3.5rem)] object-contain sm:max-w-[calc(100%-7rem)]" />
+                {productImages.length > 1 && <button type="button" onClick={() => setSelectedImageIndex((current) => (current + 1) % productImages.length)} aria-label="Next image" className="rounded-full bg-white/10 p-2 text-white hover:bg-white/20"><ChevronRight size={28} /></button>}
+              </div>
+              {productImages.length > 1 && <div className="flex max-w-full gap-2 overflow-x-auto pb-1">
+                {productImages.map((image, index) => <button key={index} type="button" onClick={() => setSelectedImageIndex(index)} aria-label={`Select image ${index + 1}`} aria-pressed={selectedImageIndex === index} className={`h-14 w-14 flex-none overflow-hidden rounded border-2 ${selectedImageIndex === index ? 'border-white' : 'border-white/30 opacity-70'}`}><img src={image} alt="" className="h-full w-full object-cover" /></button>)}
+              </div>}
+            </div>
+          </div>
+        )}
+
+        {authPromptOpen && <AuthPrompt returnTo={pathname || `/products/${params.slug}`} onClose={() => setAuthPromptOpen(false)} />}
 
         {/* Related Products */}
         {relatedProducts.length > 0 && (
