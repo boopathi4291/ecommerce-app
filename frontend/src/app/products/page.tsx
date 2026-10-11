@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { Menu, X, Search, ShoppingCart, LogOut, Trash2, MapPin, Loader2 } from 'lucide-react'
 import ProductGrid from '@/components/Products/ProductGrid'
 import AuthPrompt from '@/components/AuthPrompt'
@@ -45,6 +46,7 @@ export default function ProductsPage() {
   const [cart, setCart] = useState<CartLine[]>([])
   const [cartOpen, setCartOpen] = useState(false)
   const [authPromptOpen, setAuthPromptOpen] = useState(false)
+  const [authReturnTo, setAuthReturnTo] = useState('/products')
   const [language, setLanguage] = useState<Language>('en')
   const [currency, setCurrency] = useState('INR')
   const [region, setRegion] = useState('IN')
@@ -131,6 +133,10 @@ export default function ProductsPage() {
   }, [language, currency, region, currencyMode, ready])
 
   const locale = localeByLanguage[language]
+  const requestAuthentication = (returnTo = pathname || '/products') => {
+    setAuthReturnTo(returnTo)
+    setAuthPromptOpen(true)
+  }
 
   const filteredProducts = mockProducts.filter((product) => {
     const matchesCategory =
@@ -158,7 +164,7 @@ export default function ProductsPage() {
 
   const handleAddToCart = (product: Product): boolean => {
     if (!user) {
-      setAuthPromptOpen(true)
+      requestAuthentication()
       return false
     }
     setCart((current) => {
@@ -177,7 +183,7 @@ export default function ProductsPage() {
 
   const handleFavoriteToggle = (productId: string | number): boolean => {
     if (!user) {
-      setAuthPromptOpen(true)
+      requestAuthentication()
       return false
     }
     console.log('Toggled favorite for:', productId)
@@ -266,16 +272,20 @@ export default function ProductsPage() {
                 {currencyOptions.map((option) => <option key={option.code} value={option.code}>{option.name}</option>)}
               </select>
               <div className="relative">
-                <button type="button" onClick={() => user ? setCartOpen(!cartOpen) : setAuthPromptOpen(true)} aria-label={`${labels.cart}, ${cartCount} items`} className="relative grid h-9 w-10 place-items-center rounded border border-gray-300 text-gray-700 hover:bg-gray-100">
+                <button type="button" onClick={() => user ? setCartOpen(!cartOpen) : requestAuthentication('/cart')} aria-label={`${labels.cart}, ${cartCount} items`} className="relative grid h-9 w-10 place-items-center rounded border border-gray-300 text-gray-700 hover:bg-gray-100">
                   <ShoppingCart size={18} />
                   <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-[#294334] px-1 text-[10px] font-bold text-white">{cartCount}</span>
                 </button>
                 {cartOpen && <div className="fixed left-4 right-4 top-[173px] z-40 w-auto border border-gray-200 bg-white p-4 shadow-xl md:absolute md:left-auto md:right-0 md:top-12 md:w-[340px]">
                   <div className="flex items-center justify-between border-b pb-3"><h2 className="font-semibold">{labels.cart} <span className="text-sm font-normal text-gray-500">({cartCount})</span></h2><button type="button" aria-label="Close cart" onClick={() => setCartOpen(false)}><X size={18} /></button></div>
                   {cart.length === 0 ? <p className="py-6 text-sm text-gray-500">{labels.emptyCart}</p> : <ul className="max-h-64 divide-y overflow-auto">{cart.map(({ product, quantity }) => <li key={product.id} className="flex items-center justify-between gap-3 py-3"><span className="min-w-0 text-sm"><span className="block truncate font-medium">{product.name}</span><span className="text-gray-500">{quantity} × {formatCurrency(product.price, currency, locale)}</span></span><button type="button" aria-label={`Remove ${product.name}`} onClick={() => setCart((current) => current.filter((line) => line.product.id !== product.id))} className="p-2 text-gray-500 hover:text-red-600"><Trash2 size={16} /></button></li>)}</ul>}
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <Link href="/cart" onClick={() => setCartOpen(false)} className="flex h-10 items-center justify-center border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">View cart</Link>
+                    {cart.length > 0 && <Link href="/checkout" onClick={() => setCartOpen(false)} className="flex h-10 items-center justify-center bg-[#294334] px-2 text-sm font-semibold text-white hover:bg-[#1e3327]">Checkout</Link>}
+                  </div>
                 </div>}
               </div>
-              {user ? <button type="button" onClick={handleLogout} title={labels.logout} aria-label={labels.logout} className="grid h-9 w-9 place-items-center rounded border border-gray-300 text-gray-700 hover:bg-gray-100"><LogOut size={17} /></button> : <button type="button" onClick={() => setAuthPromptOpen(true)} className="h-9 rounded border border-[#294334] px-3 text-xs font-semibold text-[#294334] hover:bg-gray-100">Log in</button>}
+              {user ? <button type="button" onClick={handleLogout} title={labels.logout} aria-label={labels.logout} className="grid h-9 w-9 place-items-center rounded border border-gray-300 text-gray-700 hover:bg-gray-100"><LogOut size={17} /></button> : <button type="button" onClick={() => requestAuthentication()} className="h-9 rounded border border-[#294334] px-3 text-xs font-semibold text-[#294334] hover:bg-gray-100">Log in</button>}
             </div>
           </div>
         </div>
@@ -362,7 +372,7 @@ export default function ProductsPage() {
           <p className="mt-2 text-sm text-gray-600">{labels.ready}</p>
         </div>
       </div>}
-      {authPromptOpen && <AuthPrompt returnTo={pathname || '/products'} onClose={() => setAuthPromptOpen(false)} />}
+      {authPromptOpen && <AuthPrompt returnTo={authReturnTo} onClose={() => setAuthPromptOpen(false)} />}
     </div>
   )
 }

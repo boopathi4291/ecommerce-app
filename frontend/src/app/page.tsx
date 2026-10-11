@@ -74,7 +74,7 @@ export default function HomePage() {
         <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,31,23,.12),rgba(15,31,23,.7)),url('https://images.unsplash.com/photo-1490312278390-ab64016e0aa9?auto=format&fit=crop&w=1800&q=85')] bg-cover bg-center" />
         <div className="relative z-10 flex items-center gap-3 text-sm font-semibold tracking-wide">
           <span className="grid h-10 w-10 place-items-center rounded-full border border-white/40"><Leaf size={19} /></span>
-          ATELIER MARKET
+          HomeComing
         </div>
         <div className="relative z-10 max-w-xl pb-8">
           <p className="mb-5 text-xs font-semibold uppercase tracking-[.18em] text-[#d5d8c5]">Good things, chosen well</p>
@@ -88,7 +88,7 @@ export default function HomePage() {
         <div className="w-full max-w-[440px]">
           <div className="mb-12 flex items-center gap-3 text-sm font-bold tracking-wide text-[#294334] lg:hidden">
             <span className="grid h-9 w-9 place-items-center rounded-full bg-[#294334] text-white"><Leaf size={17} /></span>
-            ATELIER MARKET
+            HomeComing
           </div>
           <p className="text-sm font-semibold text-[#69816d]">YOUR EVERYDAY, ELEVATED</p>
           <h2 className="mt-3 text-3xl font-semibold text-[#20251f]">{mode === 'login' ? 'Welcome back' : 'Create your account'}</h2>
