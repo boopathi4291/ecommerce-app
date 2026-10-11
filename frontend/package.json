@@ -1,0 +1,47 @@
+{
+  "name": "ecommerce-frontend",
+  "version": "1.0.0",
+  "description": "E-commerce frontend with Next.js",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "jest",
+    "test:watch": "jest --watch"
+  },
+  "dependencies": {
+    "next": "^14.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "typescript": "^5.0.0",
+    "@reduxjs/toolkit": "^1.9.5",
+    "react-redux": "^8.1.1",
+    "tailwindcss": "^3.3.0",
+    "axios": "^1.4.0",
+    "next-auth": "^4.22.1",
+    "react-hook-form": "^7.45.0",
+    "react-hot-toast": "^2.4.0",
+    "zustand": "^4.3.8",
+    "framer-motion": "^10.12.0",
+    "swiper": "^9.3.0",
+    "lucide-react": "^0.263.1",
+    "clsx": "^2.0.0",
+    "tailwind-merge": "^2.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "autoprefixer": "^10.4.14",
+    "postcss": "^8.4.27",
+    "tailwindcss": "^3.3.0",
+    "eslint": "^8.40.0",
+    "eslint-config-next": "^14.0.0",
+    "@testing-library/react": "^14.0.0",
+    "@testing-library/jest-dom": "^6.1.0",
+    "jest": "^29.5.0",
+    "jest-environment-jsdom": "^29.5.0"
+  }
+}
