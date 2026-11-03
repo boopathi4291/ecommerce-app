@@ -6,9 +6,9 @@ import { Language } from '@/lib/locales'
 
 interface ProductGridProps {
   products: Product[]
-  onAddToCart?: (product: Product) => boolean | void
-  onBuyNow?: (product: Product) => void
-  onFavoriteToggle?: (productId: string | number) => boolean | void
+  onAddToCart?: (product: Product) => boolean | void | Promise<boolean | void>
+  onBuyNow?: (product: Product) => void | Promise<void>
+  onFavoriteToggle?: (productId: string | number, shouldFavorite: boolean) => boolean | void | Promise<boolean | void>
   columns?: 'auto' | 1 | 2 | 3 | 4
   gap?: 'small' | 'medium' | 'large'
   currency?: string

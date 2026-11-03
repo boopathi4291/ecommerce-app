@@ -6,9 +6,9 @@ import { ArrowLeft, Minus, Plus, ShoppingBag, Trash2 } from 'lucide-react'
 import AuthPrompt from '@/components/AuthPrompt'
 import { formatCurrency } from '@/lib/formatCurrency'
 import { currencyOptions, languageOptions, localeByLanguage } from '@/lib/locales'
-import { readDemoCart, writeDemoCart } from '@/lib/demoOrders'
 import { getDemoSession, DemoUser } from '@/lib/demoAuth'
 import { CartLine } from '@/types/checkout'
+import { apiProductToProduct, apiRequest, ApiCart } from '@/lib/api'
 
 export default function CartPage() {
   const [user, setUser] = useState<DemoUser | null>(null)
@@ -17,11 +17,16 @@ export default function CartPage() {
   const [locale, setLocale] = useState('en-IN')
   const [ready, setReady] = useState(false)
   const [authPromptOpen, setAuthPromptOpen] = useState(false)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     const activeUser = getDemoSession()
     setUser(activeUser)
-    setCart(activeUser ? readDemoCart() : [])
+    if (activeUser) {
+      void apiRequest<ApiCart>('/cart')
+        .then((response) => setCart(response.items.map((line) => ({ product: apiProductToProduct(line.product), quantity: line.quantity }))))
+        .catch((cause) => setError(cause instanceof Error ? cause.message : 'Could not load cart.'))
+    }
     const selectedCurrency = currencyOptions.find((option) => option.code === sessionStorage.getItem('atelier.demo.currency'))
     const selectedLanguage = languageOptions.find((option) => option.code === sessionStorage.getItem('atelier.demo.language'))
     setCurrency(selectedCurrency?.code ?? 'INR')
@@ -30,9 +35,24 @@ export default function CartPage() {
     setReady(true)
   }, [])
 
-  const updateCart = (nextCart: CartLine[]) => {
-    setCart(nextCart)
-    if (user) writeDemoCart(nextCart)
+  const updateQuantity = async (productId: number, quantity: number) => {
+    try {
+      const response = await apiRequest<ApiCart>(`/cart/items/${productId}`, { method: 'PUT', body: JSON.stringify({ quantity }) })
+      setCart(response.items.map((line) => ({ product: apiProductToProduct(line.product), quantity: line.quantity })))
+      setError('')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not update cart quantity.')
+    }
+  }
+
+  const removeItem = async (productId: number) => {
+    try {
+      await apiRequest<void>(`/cart/items/${productId}`, { method: 'DELETE' })
+      setCart((current) => current.filter((line) => line.product.id !== productId))
+      setError('')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not remove the cart item.')
+    }
   }
 
   const subtotal = cart.reduce((sum, line) => sum + line.product.price * line.quantity, 0)
@@ -49,6 +69,7 @@ export default function CartPage() {
       </header>
       <div className="mx-auto max-w-6xl px-4 py-8 sm:py-12">
         <h1 className="text-3xl font-semibold text-gray-900">Your cart <span className="text-lg font-normal text-gray-500">({cart.reduce((sum, line) => sum + line.quantity, 0)})</span></h1>
+        {error && <p role="alert" className="mt-4 border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
         {cart.length === 0 ? (
           <div className="mt-8 border border-gray-200 bg-white px-6 py-14 text-center">
             <ShoppingBag className="mx-auto text-gray-400" size={28} />
@@ -66,14 +87,14 @@ export default function CartPage() {
                     <p className="font-semibold text-gray-900">{product.name}</p>
                     <p className="mt-1 text-sm text-gray-500">{formatCurrency(product.price, currency, locale)} each</p>
                     <div className="mt-3 flex items-center gap-2">
-                      <button type="button" aria-label={`Decrease ${product.name} quantity`} disabled={quantity <= 1} onClick={() => updateCart(cart.map((line) => line.product.id === product.id ? { ...line, quantity: line.quantity - 1 } : line))} className="grid h-8 w-8 place-items-center border border-gray-300 text-gray-700 disabled:opacity-40"><Minus size={14} /></button>
+                      <button type="button" aria-label={`Decrease ${product.name} quantity`} disabled={quantity <= 1} onClick={() => updateQuantity(Number(product.id), quantity - 1)} className="grid h-8 w-8 place-items-center border border-gray-300 text-gray-700 disabled:opacity-40"><Minus size={14} /></button>
                       <span className="min-w-6 text-center text-sm">{quantity}</span>
-                      <button type="button" aria-label={`Increase ${product.name} quantity`} disabled={quantity >= product.stock} onClick={() => updateCart(cart.map((line) => line.product.id === product.id ? { ...line, quantity: line.quantity + 1 } : line))} className="grid h-8 w-8 place-items-center border border-gray-300 text-gray-700 disabled:opacity-40"><Plus size={14} /></button>
+                      <button type="button" aria-label={`Increase ${product.name} quantity`} disabled={quantity >= product.stock} onClick={() => updateQuantity(Number(product.id), quantity + 1)} className="grid h-8 w-8 place-items-center border border-gray-300 text-gray-700 disabled:opacity-40"><Plus size={14} /></button>
                     </div>
                   </div>
                   <div className="flex w-full items-center justify-between sm:w-auto sm:flex-col sm:items-end sm:gap-3">
                     <span className="font-semibold text-gray-900">{formatCurrency(product.price * quantity, currency, locale)}</span>
-                    <button type="button" onClick={() => updateCart(cart.filter((line) => line.product.id !== product.id))} aria-label={`Remove ${product.name}`} className="p-2 text-gray-500 hover:text-red-600"><Trash2 size={17} /></button>
+                    <button type="button" onClick={() => removeItem(Number(product.id))} aria-label={`Remove ${product.name}`} className="p-2 text-gray-500 hover:text-red-600"><Trash2 size={17} /></button>
                   </div>
                 </li>
               ))}

@@ -1,3 +1,5 @@
+import { apiAuth, apiRequest, ApiUser, clearApiSession } from '@/lib/api'
+
 export interface DemoUser {
   id: string
   displayName: string
@@ -6,47 +8,32 @@ export interface DemoUser {
   provider: 'email' | 'google' | 'apple'
 }
 
-interface DemoAccount {
-  user: DemoUser
-  salt: string
-  passwordHash: string
-}
-
-const ACCOUNTS_KEY = 'atelier.demo.accounts'
 const SESSION_KEY = 'atelier.demo.user'
 
-function readAccounts(): DemoAccount[] {
-  try {
-    return JSON.parse(sessionStorage.getItem(ACCOUNTS_KEY) || '[]') as DemoAccount[]
-  } catch {
-    return []
+function userFromApi(user: ApiUser): DemoUser {
+  return {
+    id: user.id,
+    displayName: `${user.first_name} ${user.last_name}`.trim(),
+    ...(user.email ? { email: user.email } : {}),
+    ...(user.mobile ? { mobile: user.mobile } : {}),
+    provider: 'email',
   }
 }
 
-function toHex(bytes: Uint8Array): string {
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
-}
-
-async function derivePasswordHash(password: string, salt: Uint8Array): Promise<string> {
-  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits'])
-  const saltBuffer = new ArrayBuffer(salt.byteLength)
-  new Uint8Array(saltBuffer).set(salt)
-  const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt: saltBuffer, iterations: 120000, hash: 'SHA-256' },
-    key,
-    256,
-  )
-  return toHex(new Uint8Array(bits))
-}
-
-function saveSession(user: DemoUser): DemoUser {
-  sessionStorage.setItem(SESSION_KEY, JSON.stringify(user))
-  return user
+function saveSession(user: ApiUser): DemoUser {
+  const demoUser = userFromApi(user)
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify(demoUser))
+  return demoUser
 }
 
 export function getDemoSession(): DemoUser | null {
   try {
-    return JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null') as DemoUser | null
+    const user = JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null') as DemoUser | null
+    if (user && !sessionStorage.getItem('homecoming.api.access')) {
+      sessionStorage.removeItem(SESSION_KEY)
+      return null
+    }
+    return user
   } catch {
     return null
   }
@@ -58,40 +45,30 @@ export async function signUpDemo(input: {
   identifier: string
   password: string
 }): Promise<DemoUser> {
-  const identifier = input.identifier.trim().toLowerCase()
-  const accounts = readAccounts()
-  if (accounts.some((account) => account.user.id === identifier)) {
-    throw new Error('An account already exists for this email or mobile number.')
-  }
-
-  const salt = crypto.getRandomValues(new Uint8Array(16))
-  const user: DemoUser = {
-    id: identifier,
-    displayName: `${input.firstName.trim()} ${input.lastName.trim()}`.trim(),
-    ...(identifier.includes('@') ? { email: identifier } : { mobile: identifier }),
-    provider: 'email',
-  }
-  accounts.push({ user, salt: toHex(salt), passwordHash: await derivePasswordHash(input.password, salt) })
-  sessionStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts))
+  const user = await apiAuth('/auth/signup', {
+    email_or_mobile: input.identifier,
+    first_name: input.firstName,
+    last_name: input.lastName,
+    password: input.password,
+  })
   return saveSession(user)
 }
 
 export async function signInDemo(identifierInput: string, password: string): Promise<DemoUser> {
-  const identifier = identifierInput.trim().toLowerCase()
-  const account = readAccounts().find((candidate) => candidate.user.id === identifier)
-  if (!account) throw new Error('No local demo account found. Create an account first.')
-
-  const salt = Uint8Array.from(account.salt.match(/.{2}/g) || [], (byte) => Number.parseInt(byte, 16))
-  const passwordHash = await derivePasswordHash(password, salt)
-  if (passwordHash !== account.passwordHash) throw new Error('That password does not match this demo account.')
-  return saveSession(account.user)
+  const user = await apiAuth('/auth/login', { email_or_mobile: identifierInput, password })
+  return saveSession(user)
 }
 
-export function signInWithDemoProvider(provider: 'google' | 'apple'): DemoUser {
-  const title = provider === 'google' ? 'Google' : 'Apple'
-  return saveSession({ id: `${provider}-demo`, displayName: `${title} Guest`, provider })
+export async function signInWithDemoProvider(provider: 'google' | 'apple'): Promise<DemoUser> {
+  await apiRequest<void>(`/auth/oauth/${provider}/authorize`)
+  throw new Error(`${provider} OAuth returned without a user session.`)
 }
 
-export function clearDemoSession(): void {
-  sessionStorage.removeItem(SESSION_KEY)
+export async function clearDemoSession(): Promise<void> {
+  try {
+    await clearApiSession()
+  } catch {
+  } finally {
+    sessionStorage.removeItem(SESSION_KEY)
+  }
 }

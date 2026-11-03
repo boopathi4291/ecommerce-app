@@ -3,14 +3,15 @@
 import { useEffect, useState } from 'react'
 import { Heart, ShoppingCart, Star, Share2, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { mockProducts } from '@/data/mockProducts'
-import { Product } from '@/types/product'
 import { getDemoSession } from '@/lib/demoAuth'
 import { usePathname } from 'next/navigation'
 import AuthPrompt from '@/components/AuthPrompt'
+import { apiProductToProduct, apiRequest, ApiCart, ApiProduct } from '@/lib/api'
 
 export default function ProductDetailsPage({ params }: { params: { slug: string } }) {
   const pathname = usePathname()
-  const product = mockProducts.find((p) => p.id.toString() === params.slug) || mockProducts[0]
+  const fallbackProduct = mockProducts.find((p) => p.id.toString() === params.slug) || mockProducts[0]
+  const [product, setProduct] = useState(fallbackProduct)
   const [quantity, setQuantity] = useState(1)
   const [isFavorite, setIsFavorite] = useState(false)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -21,8 +22,17 @@ export default function ProductDetailsPage({ params }: { params: { slug: string 
   const productImages = product.images?.length ? product.images : [product.image]
 
   useEffect(() => {
-    setIsAuthenticated(Boolean(getDemoSession()))
-  }, [])
+    const activeUser = getDemoSession()
+    setIsAuthenticated(Boolean(activeUser))
+    void apiRequest<ApiProduct>(`/products/${params.slug}`)
+      .then((apiProduct) => setProduct(apiProductToProduct(apiProduct)))
+      .catch(() => setProduct(fallbackProduct))
+    if (activeUser) {
+      void apiRequest<{ items: ApiProduct[] }>('/wishlist')
+        .then((wishlist) => setIsFavorite(wishlist.items.some((item) => String(item.id) === params.slug)))
+        .catch(() => setIsFavorite(false))
+    }
+  }, [params.slug, fallbackProduct])
 
   useEffect(() => {
     if (!isImageModalOpen) return
@@ -52,24 +62,21 @@ export default function ProductDetailsPage({ params }: { params: { slug: string 
         )
       : 0
 
-  const handleAddToCart = () => {
+  const handleAddToCart = async () => {
     if (!isAuthenticated) {
       setAuthPromptOpen(true)
       return
     }
 
-    let cart: { product: Product; quantity: number }[] = []
     try {
-      cart = JSON.parse(sessionStorage.getItem('atelier.demo.cart') || '[]') as { product: Product; quantity: number }[]
-    } catch {
-      cart = []
+      await apiRequest<ApiCart>('/cart/items', {
+        method: 'POST',
+        body: JSON.stringify({ product_id: Number(product.id), quantity }),
+      })
+      setCartMessage(`${product.name} added to your cart.`)
+    } catch (cause) {
+      setCartMessage(cause instanceof Error ? cause.message : 'Could not add this product to your cart.')
     }
-    const existingLine = cart.find((line) => line.product.id === product.id)
-    const updatedCart = existingLine
-      ? cart.map((line) => line.product.id === product.id ? { ...line, quantity: line.quantity + quantity } : line)
-      : [...cart, { product, quantity }]
-    sessionStorage.setItem('atelier.demo.cart', JSON.stringify(updatedCart))
-    setCartMessage(`${product.name} added to your cart.`)
   }
 
   return (
@@ -205,7 +212,9 @@ export default function ProductDetailsPage({ params }: { params: { slug: string 
                       setAuthPromptOpen(true)
                       return
                     }
-                    setIsFavorite(!isFavorite)
+                    void apiRequest<void>(`/wishlist/${product.id}`, { method: isFavorite ? 'DELETE' : 'PUT' })
+                      .then(() => setIsFavorite(!isFavorite))
+                      .catch((cause) => setCartMessage(cause instanceof Error ? cause.message : 'Could not update wishlist.'))
                   }}
                   aria-label={isFavorite ? 'Remove from wishlist' : 'Add to wishlist'}
                   className="px-6 py-3 border border-gray-300 rounded-lg hover:bg-gray-100 flex items-center justify-center"

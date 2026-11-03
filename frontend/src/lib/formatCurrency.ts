@@ -13,10 +13,21 @@ const exchangeRates: Record<string, number> = {
   NZD: 1 / 50,
 }
 
+const zeroDecimalCurrencies = new Set(['INR', 'JPY', 'KRW'])
+
+export function formatMinorCurrency(amountMinor: number, currency: string, locale: string): string {
+  const exponent = currency === 'JPY' || currency === 'KRW' ? 0 : 2
+  return new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency,
+    maximumFractionDigits: zeroDecimalCurrencies.has(currency) ? 0 : exponent,
+  }).format(amountMinor / (10 ** exponent))
+}
+
 export function formatCurrency(amountInr: number, currency: string, locale: string): string {
   return new Intl.NumberFormat(locale, {
     style: 'currency',
     currency,
-    maximumFractionDigits: ['INR', 'JPY', 'KRW'].includes(currency) ? 0 : 2,
+    maximumFractionDigits: zeroDecimalCurrencies.has(currency) ? 0 : 2,
   }).format(amountInr * (exchangeRates[currency] ?? 1))
 }

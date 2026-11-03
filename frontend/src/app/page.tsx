@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowRight, Eye, EyeOff, Leaf, Lock } from 'lucide-react'
-import { signInDemo, signInWithDemoProvider, signUpDemo } from '@/lib/demoAuth'
+import { getDemoSession, signInDemo, signInWithDemoProvider, signUpDemo } from '@/lib/demoAuth'
 
 type AuthMode = 'login' | 'signup'
 
@@ -27,7 +27,7 @@ export default function HomePage() {
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    if (sessionStorage.getItem('atelier.demo.user')) {
+    if (getDemoSession()) {
       router.replace(takeReturnPath())
       return
     }
@@ -62,10 +62,14 @@ export default function HomePage() {
     }
   }
 
-  function handleProvider(provider: 'google' | 'apple') {
+  async function handleProvider(provider: 'google' | 'apple') {
     setError('')
-    signInWithDemoProvider(provider)
-    finishLogin()
+    try {
+      await signInWithDemoProvider(provider)
+      finishLogin()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : `${provider} sign-in is unavailable.`)
+    }
   }
 
   return (
@@ -101,10 +105,10 @@ export default function HomePage() {
 
           <div className="mt-6 grid grid-cols-2 gap-3">
             <button type="button" onClick={() => handleProvider('google')} className="flex h-11 items-center justify-center gap-2 rounded border border-[#dfe2d9] bg-white text-sm font-medium text-[#343b34] hover:bg-[#f0f2ec]">
-              <span className="text-base font-bold text-[#4285f4]">G</span> Google <span className="text-[10px] text-[#8b9188]">demo</span>
+              <span className="text-base font-bold text-[#4285f4]">G</span> Google
             </button>
             <button type="button" onClick={() => handleProvider('apple')} className="flex h-11 items-center justify-center gap-2 rounded border border-[#dfe2d9] bg-white text-sm font-medium text-[#343b34] hover:bg-[#f0f2ec]">
-              <span className="text-lg leading-none">●</span> Apple <span className="text-[10px] text-[#8b9188]">demo</span>
+              <span className="text-lg leading-none">●</span> Apple
             </button>
           </div>
 
@@ -131,7 +135,7 @@ export default function HomePage() {
               {busy ? 'Please wait...' : mode === 'login' ? 'Log in' : 'Create account'} <ArrowRight size={17} />
             </button>
           </form>
-          <p className="mt-5 text-center text-xs leading-5 text-[#8b9188]">Phase-one local demo. Account data stays in this browser tab and is cleared when the session ends.</p>
+          <p className="mt-5 text-center text-xs leading-5 text-[#8b9188]">Passwords are hashed by the HomeComing API. Your sign-in session is kept for this browser session.</p>
         </div>
       </section>
     </main>

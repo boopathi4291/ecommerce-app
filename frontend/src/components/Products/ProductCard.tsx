@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Heart, ShoppingBag, ShoppingCart, Star } from 'lucide-react'
 import { Product } from '@/types/product'
@@ -9,9 +9,9 @@ import { Language, storeLabels, translateCategory } from '@/lib/locales'
 
 interface ProductCardProps {
   product: Product
-  onAddToCart?: (product: Product) => boolean | void
-  onBuyNow?: (product: Product) => void
-  onFavoriteToggle?: (productId: string | number) => boolean | void
+  onAddToCart?: (product: Product) => boolean | void | Promise<boolean | void>
+  onBuyNow?: (product: Product) => void | Promise<void>
+  onFavoriteToggle?: (productId: string | number, shouldFavorite: boolean) => boolean | void | Promise<boolean | void>
   showRating?: boolean
   showStock?: boolean
   currency?: string
@@ -34,24 +34,28 @@ export default function ProductCard({
   const [isFavorite, setIsFavorite] = useState(product.isFavorite || false)
   const [isAdding, setIsAdding] = useState(false)
 
-  const handleFavoriteClick = () => {
-    const allowed = onFavoriteToggle?.(product.id)
+  useEffect(() => {
+    setIsFavorite(product.isFavorite || false)
+  }, [product.isFavorite])
+
+  const handleFavoriteClick = async () => {
+    const allowed = await onFavoriteToggle?.(product.id, !isFavorite)
     if (allowed !== false) setIsFavorite(!isFavorite)
   }
 
   const handleAddToCart = async () => {
     setIsAdding(true)
     try {
-      const added = onAddToCart?.(product)
+      const added = await onAddToCart?.(product)
       if (added !== false) await new Promise((resolve) => setTimeout(resolve, 500))
     } finally {
       setIsAdding(false)
     }
   }
 
-  const handleBuyNow = () => {
-    if (onBuyNow) onBuyNow(product)
-    else onAddToCart?.(product)
+  const handleBuyNow = async () => {
+    if (onBuyNow) await onBuyNow(product)
+    else await onAddToCart?.(product)
   }
 
   const discountPercentage =

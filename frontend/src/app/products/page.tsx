@@ -11,6 +11,7 @@ import { Product } from '@/types/product'
 import { clearDemoSession, DemoUser, getDemoSession } from '@/lib/demoAuth'
 import { formatCurrency } from '@/lib/formatCurrency'
 import { currencyOptions, defaultCurrencyForLanguage, languageOptions, localeByLanguage, Language, preferencesForRegion, preferencesFromBrowser, storeLabels, translateCategory } from '@/lib/locales'
+import { apiProductToProduct, apiRequest, ApiCart, ApiProduct } from '@/lib/api'
 
 type CartLine = { product: Product; quantity: number }
 
@@ -43,6 +44,7 @@ export default function ProductsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState('featured')
   const [user, setUser] = useState<DemoUser | null>(null)
+  const [products, setProducts] = useState<Product[]>(mockProducts)
   const [cart, setCart] = useState<CartLine[]>([])
   const [cartOpen, setCartOpen] = useState(false)
   const [authPromptOpen, setAuthPromptOpen] = useState(false)
@@ -62,6 +64,16 @@ export default function ProductsPage() {
   useEffect(() => {
     const activeUser = getDemoSession()
     setUser(activeUser)
+    const catalogPromise = apiRequest<ApiProduct[]>('/products?limit=100')
+    const wishlistPromise = activeUser
+      ? apiRequest<{ items: ApiProduct[] }>('/wishlist').catch(() => ({ items: [] }))
+      : Promise.resolve({ items: [] as ApiProduct[] })
+    void Promise.all([catalogPromise, wishlistPromise])
+      .then(([items, wishlist]) => {
+        const savedIds = new Set(wishlist.items.map((item) => String(item.id)))
+        setProducts(items.map((item) => ({ ...apiProductToProduct(item), isFavorite: savedIds.has(String(item.id)) })))
+      })
+      .catch(() => setProducts(mockProducts))
     const browserDefaults = preferencesFromBrowser(navigator.language, Intl.DateTimeFormat().resolvedOptions().timeZone)
     const savedLanguage = languageOptions.find((option) => option.code === sessionStorage.getItem('atelier.demo.language'))
     const savedCurrency = currencyOptions.find((option) => option.code === sessionStorage.getItem('atelier.demo.currency'))
@@ -103,11 +115,9 @@ export default function ProductsPage() {
     setWelcomeVisible(Boolean(activeUser))
     setReady(true)
     if (activeUser) {
-      try {
-        setCart(JSON.parse(sessionStorage.getItem('atelier.demo.cart') || '[]') as CartLine[])
-      } catch {
-        setCart([])
-      }
+      void apiRequest<ApiCart>('/cart')
+        .then((result) => setCart(result.items.map((line) => ({ product: apiProductToProduct(line.product), quantity: line.quantity }))))
+        .catch((cause) => setLocationMessage(cause instanceof Error ? cause.message : 'Could not load your cart.'))
     } else {
       setCart([])
     }
@@ -119,10 +129,6 @@ export default function ProductsPage() {
       if (startupLocationTimeout !== undefined) window.clearTimeout(startupLocationTimeout)
     }
   }, [router])
-
-  useEffect(() => {
-    if (ready && user) sessionStorage.setItem('atelier.demo.cart', JSON.stringify(cart))
-  }, [cart, ready, user])
 
   useEffect(() => {
     if (!ready) return
@@ -138,7 +144,7 @@ export default function ProductsPage() {
     setAuthPromptOpen(true)
   }
 
-  const filteredProducts = mockProducts.filter((product) => {
+  const filteredProducts = products.filter((product) => {
     const matchesCategory =
       selectedCategory === 'All Products' || product.category === selectedCategory
     const matchesSearch = product.name
@@ -162,32 +168,41 @@ export default function ProductsPage() {
     }
   })
 
-  const handleAddToCart = (product: Product): boolean => {
+  const handleAddToCart = async (product: Product): Promise<boolean> => {
     if (!user) {
       requestAuthentication()
       return false
     }
-    setCart((current) => {
-      const existingLine = current.find((line) => line.product.id === product.id)
-      return existingLine
-        ? current.map((line) => line.product.id === product.id ? { ...line, quantity: line.quantity + 1 } : line)
-        : [...current, { product, quantity: 1 }]
-    })
-    return true
+    try {
+      const result = await apiRequest<ApiCart>('/cart/items', {
+        method: 'POST',
+        body: JSON.stringify({ product_id: Number(product.id), quantity: 1 }),
+      })
+      setCart(result.items.map((line) => ({ product: apiProductToProduct(line.product), quantity: line.quantity })))
+      return true
+    } catch (cause) {
+      setLocationMessage(cause instanceof Error ? cause.message : 'Could not update your cart.')
+      return false
+    }
   }
 
-  const handleBuyNow = (product: Product) => {
-    if (!handleAddToCart(product)) return
+  const handleBuyNow = async (product: Product) => {
+    if (!await handleAddToCart(product)) return
     setCartOpen(true)
   }
 
-  const handleFavoriteToggle = (productId: string | number): boolean => {
+  const handleFavoriteToggle = async (productId: string | number, shouldFavorite: boolean): Promise<boolean> => {
     if (!user) {
       requestAuthentication()
       return false
     }
-    console.log('Toggled favorite for:', productId)
-    return true
+    try {
+      await apiRequest<void>(`/wishlist/${productId}`, { method: shouldFavorite ? 'PUT' : 'DELETE' })
+      return true
+    } catch (cause) {
+      setLocationMessage(cause instanceof Error ? cause.message : 'Could not update your wishlist.')
+      return false
+    }
   }
 
   const handleLanguageChange = (nextLanguage: Language) => {
@@ -223,9 +238,8 @@ export default function ProductsPage() {
     }, { maximumAge: 60000, timeout: 10000 })
   }
 
-  const handleLogout = () => {
-    clearDemoSession()
-    sessionStorage.removeItem('atelier.demo.cart')
+  const handleLogout = async () => {
+    await clearDemoSession()
     router.replace('/')
   }
 
@@ -278,7 +292,7 @@ export default function ProductsPage() {
                 </button>
                 {cartOpen && <div className="fixed left-4 right-4 top-[173px] z-40 w-auto border border-gray-200 bg-white p-4 shadow-xl md:absolute md:left-auto md:right-0 md:top-12 md:w-[340px]">
                   <div className="flex items-center justify-between border-b pb-3"><h2 className="font-semibold">{labels.cart} <span className="text-sm font-normal text-gray-500">({cartCount})</span></h2><button type="button" aria-label="Close cart" onClick={() => setCartOpen(false)}><X size={18} /></button></div>
-                  {cart.length === 0 ? <p className="py-6 text-sm text-gray-500">{labels.emptyCart}</p> : <ul className="max-h-64 divide-y overflow-auto">{cart.map(({ product, quantity }) => <li key={product.id} className="flex items-center justify-between gap-3 py-3"><span className="min-w-0 text-sm"><span className="block truncate font-medium">{product.name}</span><span className="text-gray-500">{quantity} × {formatCurrency(product.price, currency, locale)}</span></span><button type="button" aria-label={`Remove ${product.name}`} onClick={() => setCart((current) => current.filter((line) => line.product.id !== product.id))} className="p-2 text-gray-500 hover:text-red-600"><Trash2 size={16} /></button></li>)}</ul>}
+                  {cart.length === 0 ? <p className="py-6 text-sm text-gray-500">{labels.emptyCart}</p> : <ul className="max-h-64 divide-y overflow-auto">{cart.map(({ product, quantity }) => <li key={product.id} className="flex items-center justify-between gap-3 py-3"><span className="min-w-0 text-sm"><span className="block truncate font-medium">{product.name}</span><span className="text-gray-500">{quantity} × {formatCurrency(product.price, currency, locale)}</span></span><button type="button" aria-label={`Remove ${product.name}`} onClick={async () => { try { await apiRequest<void>(`/cart/items/${product.id}`, { method: 'DELETE' }); setCart((current) => current.filter((line) => line.product.id !== product.id)) } catch (cause) { setLocationMessage(cause instanceof Error ? cause.message : 'Could not remove the cart item.') } }} className="p-2 text-gray-500 hover:text-red-600"><Trash2 size={16} /></button></li>)}</ul>}
                   <div className="mt-3 grid grid-cols-2 gap-2">
                     <Link href="/cart" onClick={() => setCartOpen(false)} className="flex h-10 items-center justify-center border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">View cart</Link>
                     {cart.length > 0 && <Link href="/checkout" onClick={() => setCartOpen(false)} className="flex h-10 items-center justify-center bg-[#294334] px-2 text-sm font-semibold text-white hover:bg-[#1e3327]">Checkout</Link>}

@@ -2,16 +2,13 @@
 
 import Link from 'next/link'
 import { FormEvent, useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { ArrowLeft, Lock, ShieldCheck } from 'lucide-react'
 import AuthPrompt from '@/components/AuthPrompt'
 import { getDemoSession, DemoUser } from '@/lib/demoAuth'
 import { formatCurrency } from '@/lib/formatCurrency'
 import { currencyOptions, languageOptions, localeByLanguage } from '@/lib/locales'
-import { readDemoCart, saveDemoOrder, writeDemoCart } from '@/lib/demoOrders'
-import { CartLine, DemoOrder, PaymentMethod, ShippingDetails } from '@/types/checkout'
-
-type DemoOutcome = 'success' | 'declined' | 'timeout'
+import { CartLine, PaymentMethod, ShippingDetails } from '@/types/checkout'
+import { apiProductToProduct, apiRequest, ApiCart } from '@/lib/api'
 
 const paymentOptions: { value: PaymentMethod; label: string; detail: string }[] = [
   { value: 'upi', label: 'UPI', detail: 'UPI app or UPI ID' },
@@ -22,14 +19,12 @@ const paymentOptions: { value: PaymentMethod; label: string; detail: string }[] 
 ]
 
 export default function CheckoutPage() {
-  const router = useRouter()
   const [user, setUser] = useState<DemoUser | null>(null)
   const [cart, setCart] = useState<CartLine[]>([])
   const [currency, setCurrency] = useState('INR')
   const [locale, setLocale] = useState('en-IN')
   const [shipping, setShipping] = useState<ShippingDetails>({ fullName: '', email: '', mobile: '', address: '', city: '', postalCode: '' })
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('upi')
-  const [demoOutcome, setDemoOutcome] = useState<DemoOutcome>('success')
   const [error, setError] = useState('')
   const [processing, setProcessing] = useState(false)
   const [ready, setReady] = useState(false)
@@ -38,7 +33,11 @@ export default function CheckoutPage() {
   useEffect(() => {
     const activeUser = getDemoSession()
     setUser(activeUser)
-    setCart(activeUser ? readDemoCart() : [])
+    if (activeUser) {
+      void apiRequest<ApiCart>('/cart')
+        .then((response) => setCart(response.items.map((line) => ({ product: apiProductToProduct(line.product), quantity: line.quantity }))))
+        .catch((cause) => setError(cause instanceof Error ? cause.message : 'Could not load cart.'))
+    }
     const savedCurrency = currencyOptions.find((option) => option.code === sessionStorage.getItem('atelier.demo.currency'))
     const savedLanguage = languageOptions.find((option) => option.code === sessionStorage.getItem('atelier.demo.language'))
     setCurrency(savedCurrency?.code ?? 'INR')
@@ -65,33 +64,28 @@ export default function CheckoutPage() {
     setProcessing(true)
 
     try {
-      await new Promise((resolve) => window.setTimeout(resolve, 700))
-      if (demoOutcome === 'declined') {
-        setError('The demo payment was declined. No charge was made and your cart is unchanged.')
-        return
-      }
-      if (demoOutcome === 'timeout') {
-        setError('No payment confirmation arrived. No order was created and this demo made no charge. Your cart is unchanged. A live checkout must verify the provider status before retrying or refunding.')
-        return
-      }
-
-      const orderId = `AT-${Date.now().toString(36).toUpperCase()}`
-      const trackingCode = `TRK-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
-      const order: DemoOrder = {
-        id: orderId,
-        userId: user.id,
-        trackingCode,
-        paymentMethod,
-        paymentStatus: 'paid',
-        createdAt: new Date().toISOString(),
-        currency,
-        items: cart,
-        shipping,
-        total: subtotal,
-      }
-      saveDemoOrder(order)
-      writeDemoCart([])
-      router.push(`/orders/${orderId}`)
+      const idempotencyStorageKey = `homecoming.checkout.idempotency.${user.id}`
+      const idempotencyKey = sessionStorage.getItem(idempotencyStorageKey) || crypto.randomUUID()
+      sessionStorage.setItem(idempotencyStorageKey, idempotencyKey)
+      const checkout = await apiRequest<{ order_id: string; payment_id: string; payment_status: string; amount: number; currency: string; checkout_url: string }>('/checkout', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': idempotencyKey },
+        body: JSON.stringify({
+          payment_method: paymentMethod,
+          currency,
+          shipping: {
+            full_name: shipping.fullName,
+            email: shipping.email,
+            mobile: shipping.mobile,
+            address: shipping.address,
+            city: shipping.city,
+            postal_code: shipping.postalCode,
+          },
+        }),
+      })
+      window.location.assign(checkout.checkout_url)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not start checkout. Your cart has not been cleared.')
     } finally {
       setProcessing(false)
     }
@@ -150,13 +144,6 @@ export default function CheckoutPage() {
                   ))}
                 </div>
                 {paymentMethod === 'zelle' && <p className="mt-4 border-l-2 border-amber-500 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">Zelle is a peer-to-peer service and does not provide guaranteed purchase protection or reversible merchant payments. This option is simulation-only.</p>}
-                <label className="mt-6 block max-w-sm space-y-1.5 text-xs font-semibold text-gray-700">Demo payment result
-                  <select value={demoOutcome} onChange={(event) => setDemoOutcome(event.target.value as DemoOutcome)} className="h-10 w-full rounded border border-gray-300 bg-white px-3 text-sm font-normal">
-                    <option value="success">Payment confirmed</option>
-                    <option value="declined">Payment declined</option>
-                    <option value="timeout">Confirmation timeout</option>
-                  </select>
-                </label>
                 <p className="mt-3 flex items-start gap-2 text-xs leading-5 text-gray-500"><Lock size={14} className="mt-0.5 flex-none" />No real financial details are requested or stored in this phase.</p>
               </section>
             </div>
@@ -166,8 +153,8 @@ export default function CheckoutPage() {
               <ul className="mt-4 divide-y text-sm">{cart.map(({ product, quantity }) => <li key={product.id} className="flex justify-between gap-4 py-3"><span className="min-w-0"><span className="block truncate font-medium text-gray-800">{product.name}</span><span className="text-gray-500">Qty {quantity}</span></span><span className="whitespace-nowrap text-gray-700">{formatCurrency(product.price * quantity, currency, locale)}</span></li>)}</ul>
               <div className="mt-3 flex justify-between border-t pt-4 font-semibold text-gray-900"><span>Total</span><span>{formatCurrency(subtotal, currency, locale)}</span></div>
               {error && <p role="alert" className="mt-4 border border-amber-300 bg-amber-50 p-3 text-sm leading-5 text-amber-900">{error}</p>}
-              <button type="submit" disabled={processing} className="mt-5 flex h-11 w-full items-center justify-center rounded bg-[#294334] px-4 text-sm font-semibold text-white hover:bg-[#1e3327] disabled:cursor-wait disabled:opacity-60">{processing ? 'Processing demo...' : 'Confirm demo payment'}</button>
-              <p className="mt-3 text-xs leading-5 text-gray-500">An order and tracking code are created only for the simulated confirmed result.</p>
+              <button type="submit" disabled={processing} className="mt-5 flex h-11 w-full items-center justify-center rounded bg-[#294334] px-4 text-sm font-semibold text-white hover:bg-[#1e3327] disabled:cursor-wait disabled:opacity-60">{processing ? 'Starting secure checkout...' : 'Continue to payment'}</button>
+              <p className="mt-3 text-xs leading-5 text-gray-500">An order is confirmed only after the backend receives and verifies the payment provider webhook.</p>
             </aside>
           </form>
         )}
