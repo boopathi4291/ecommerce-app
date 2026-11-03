@@ -62,7 +62,7 @@ def create_token_pair(db: Session, user: User) -> TokenPair:
 def signup(payload: SignUpRequest, db: Session = Depends(get_db)) -> TokenPair:
     email, mobile = normalize_identifier(payload.email_or_mobile)
     identifier_filter = User.email == email if email else User.mobile == mobile
-    existing = db.scalar(select(User.id).where(identifier_filter))
+    existing = db.scalar(select(User.id).where(User.tenant_id.is_(None), identifier_filter))
     if existing is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An account already exists for that identifier")
 
@@ -88,7 +88,7 @@ def signup(payload: SignUpRequest, db: Session = Depends(get_db)) -> TokenPair:
 def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenPair:
     email, mobile = normalize_identifier(payload.email_or_mobile)
     identifier_filter = User.email == email if email else User.mobile == mobile
-    user = db.scalar(select(User).where(identifier_filter))
+    user = db.scalar(select(User).where(User.tenant_id.is_(None), identifier_filter))
     if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email/mobile or password", headers={"WWW-Authenticate": "Bearer"})
     tokens = create_token_pair(db, user)

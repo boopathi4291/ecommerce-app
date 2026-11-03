@@ -8,7 +8,7 @@ import { formatCurrency } from '@/lib/formatCurrency'
 import { currencyOptions, languageOptions, localeByLanguage } from '@/lib/locales'
 import { getDemoSession, DemoUser } from '@/lib/demoAuth'
 import { CartLine } from '@/types/checkout'
-import { apiProductToProduct, apiRequest, ApiCart } from '@/lib/api'
+import { apiProductToProduct, apiRequest, ApiCart, ApiTenant } from '@/lib/api'
 
 export default function CartPage() {
   const [user, setUser] = useState<DemoUser | null>(null)
@@ -29,7 +29,11 @@ export default function CartPage() {
     }
     const selectedCurrency = currencyOptions.find((option) => option.code === sessionStorage.getItem('atelier.demo.currency'))
     const selectedLanguage = languageOptions.find((option) => option.code === sessionStorage.getItem('atelier.demo.language'))
-    setCurrency(selectedCurrency?.code ?? 'INR')
+    if (activeUser?.tenantSlug) {
+      void apiRequest<ApiTenant>(`/tenants/${encodeURIComponent(activeUser.tenantSlug)}`)
+        .then((tenant) => setCurrency(tenant.default_currency))
+        .catch(() => setCurrency(selectedCurrency?.code ?? 'INR'))
+    } else setCurrency(selectedCurrency?.code ?? 'INR')
     setLocale(selectedLanguage ? localeByLanguage[selectedLanguage.code] : 'en-IN')
     setAuthPromptOpen(!activeUser)
     setReady(true)
@@ -56,6 +60,7 @@ export default function CartPage() {
   }
 
   const subtotal = cart.reduce((sum, line) => sum + line.product.price * line.quantity, 0)
+  const storefrontHref = user?.tenantSlug ? `/${user.tenantSlug}/products` : '/products'
 
   if (!ready) return <main className="min-h-screen bg-gray-50" aria-label="Loading cart" />
 
@@ -75,7 +80,7 @@ export default function CartPage() {
             <ShoppingBag className="mx-auto text-gray-400" size={28} />
             <h2 className="mt-4 text-lg font-semibold text-gray-900">Your cart is empty</h2>
             <p className="mt-2 text-sm text-gray-600">Browse the collection to find something you love.</p>
-            <Link href="/products" className="mt-6 inline-flex h-10 items-center rounded bg-[#294334] px-5 text-sm font-semibold text-white hover:bg-[#1e3327]">Browse products</Link>
+            <Link href={storefrontHref} className="mt-6 inline-flex h-10 items-center rounded bg-[#294334] px-5 text-sm font-semibold text-white hover:bg-[#1e3327]">Browse products</Link>
           </div>
         ) : (
           <div className="mt-8 grid items-start gap-8 lg:grid-cols-[1fr_320px]">

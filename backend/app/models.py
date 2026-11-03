@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, JSON, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, JSON, String, UniqueConstraint, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -13,12 +13,35 @@ class Base(DeclarativeBase):
     pass
 
 
-class User(Base):
-    __tablename__ = "users"
+class Tenant(Base):
+    __tablename__ = "tenants"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    email: Mapped[str | None] = mapped_column(String(320), unique=True, index=True)
-    mobile: Mapped[str | None] = mapped_column(String(24), unique=True, index=True)
+    slug: Mapped[str] = mapped_column(String(63), unique=True, index=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    logo_url: Mapped[str | None] = mapped_column(String(1000))
+    theme_settings: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    enabled_payment_methods: Mapped[list[str]] = mapped_column(JSON, default=lambda: ["upi", "paypal", "online-banking", "card"], nullable=False)
+    default_currency: Mapped[str] = mapped_column(String(3), default="INR", nullable=False)
+    payment_provider: Mapped[str] = mapped_column(String(32), default="unconfigured", nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class User(Base):
+    __tablename__ = "users"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "email", name="uq_users_tenant_email"),
+        UniqueConstraint("tenant_id", "mobile", name="uq_users_tenant_mobile"),
+        Index("uq_users_global_email", "email", unique=True, sqlite_where=text("tenant_id IS NULL"), postgresql_where=text("tenant_id IS NULL")),
+        Index("uq_users_global_mobile", "mobile", unique=True, sqlite_where=text("tenant_id IS NULL"), postgresql_where=text("tenant_id IS NULL")),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[str | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
+    role: Mapped[str] = mapped_column(String(24), default="customer", nullable=False)
+    email: Mapped[str | None] = mapped_column(String(320), index=True)
+    mobile: Mapped[str | None] = mapped_column(String(24), index=True)
     first_name: Mapped[str] = mapped_column(String(80))
     last_name: Mapped[str] = mapped_column(String(80))
     password_hash: Mapped[str] = mapped_column(String(255))
@@ -30,6 +53,7 @@ class Product(Base):
     __tablename__ = "products"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[str | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(180), nullable=False)
     description: Mapped[str] = mapped_column(String(2000), default="", nullable=False)
     category: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
@@ -45,6 +69,7 @@ class CartItem(Base):
     __table_args__ = (UniqueConstraint("user_id", "product_id", name="uq_cart_user_product"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[str | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="RESTRICT"))
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -56,6 +81,7 @@ class WishlistItem(Base):
     __table_args__ = (UniqueConstraint("user_id", "product_id", name="uq_wishlist_user_product"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[str | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
@@ -78,6 +104,7 @@ class Order(Base):
     __table_args__ = (Index("ix_orders_user_created", "user_id", "created_at"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[str | None] = mapped_column(ForeignKey("tenants.id", ondelete="RESTRICT"), index=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
     status: Mapped[str] = mapped_column(String(24), default="pending", nullable=False)
     payment_status: Mapped[str] = mapped_column(String(24), default="pending", nullable=False)
@@ -94,6 +121,7 @@ class PaymentAttempt(Base):
     __tablename__ = "payment_attempts"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[str | None] = mapped_column(ForeignKey("tenants.id", ondelete="RESTRICT"), index=True)
     order_id: Mapped[str] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), index=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
     provider: Mapped[str] = mapped_column(String(32), nullable=False)

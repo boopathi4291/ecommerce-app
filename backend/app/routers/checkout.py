@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.dependencies import get_current_user
 from app.database import get_db
-from app.models import CartItem, Order, PaymentAttempt, Product, User
+from app.models import CartItem, Order, PaymentAttempt, Product, Tenant, User
 from app.config import get_settings
 from app.payments import PaymentGateway, PaymentGatewayUnavailable, get_payment_gateway
 from app.pricing import INR_PER_UNIT, inr_to_minor_units
@@ -49,6 +49,8 @@ def create_checkout(
     subtotal_inr = 0
     for item in cart_items:
         product = item.product
+        if product.tenant_id != user.tenant_id:
+            raise HTTPException(status_code=409, detail="Cart contains a product from another store")
         if not product.is_active:
             raise HTTPException(status_code=409, detail=f"Product {product.id} is unavailable")
         if item.quantity > product.stock:
@@ -65,6 +67,14 @@ def create_checkout(
         })
 
     currency = payload.currency.upper()
+    tenant = db.get(Tenant, user.tenant_id) if user.tenant_id else None
+    if tenant is not None:
+        if not tenant.is_active:
+            raise HTTPException(status_code=404, detail="Store is not active")
+        if payload.payment_method.value not in tenant.enabled_payment_methods:
+            raise HTTPException(status_code=422, detail="This store does not accept the selected payment method")
+        if currency != tenant.default_currency:
+            raise HTTPException(status_code=422, detail="Checkout currency must match this store's configured currency")
     if currency not in INR_PER_UNIT:
         raise HTTPException(status_code=422, detail="Unsupported checkout currency")
     subtotal = inr_to_minor_units(subtotal_inr, currency)
@@ -74,6 +84,7 @@ def create_checkout(
 
     order = Order(
         user_id=user.id,
+        tenant_id=user.tenant_id,
         status="pending",
         payment_status="pending",
         payment_method=payload.payment_method.value,
@@ -87,6 +98,7 @@ def create_checkout(
     attempt = PaymentAttempt(
         order_id=order.id,
         user_id=user.id,
+        tenant_id=user.tenant_id,
         provider=payload.payment_method.value,
         payment_method=payload.payment_method.value,
         status="pending",
@@ -104,6 +116,7 @@ def create_checkout(
             currency=order.currency,
             method=payload.payment_method,
             idempotency_key=idempotency_key,
+            provider=tenant.payment_provider if tenant is not None else None,
             success_url=f"{get_settings().frontend_base_url.rstrip('/')}/payment-return?order_id={order.id}&payment_id={attempt.id}",
             cancel_url=f"{get_settings().frontend_base_url.rstrip('/')}/checkout?payment=cancelled",
         )

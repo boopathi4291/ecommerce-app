@@ -37,6 +37,7 @@ export default function OrderDetailsPage({ params }: { params: { id: string } })
   const [locale, setLocale] = useState('en-IN')
   const [ready, setReady] = useState(false)
   const [authPromptOpen, setAuthPromptOpen] = useState(false)
+  const storefrontHref = user?.tenantSlug ? `/${user.tenantSlug}/products` : '/products'
 
   useEffect(() => {
     const activeUser = getDemoSession()
@@ -78,13 +79,13 @@ export default function OrderDetailsPage({ params }: { params: { id: string } })
               <div className="border border-gray-200 bg-white p-5"><h2 className="font-semibold text-gray-900">Delivery</h2><p className="mt-3 text-sm leading-6 text-gray-600">{order.shipping.full_name}<br />{order.shipping.address}<br />{order.shipping.city}, {order.shipping.postal_code}<br />{order.shipping.email}<br />{order.shipping.mobile}</p></div>
               <div className="border border-gray-200 bg-white p-5"><h2 className="font-semibold text-gray-900">Payment</h2><p className="mt-3 text-sm text-gray-600">{paymentLabels[order.payment_method]}</p><p className="mt-2 text-sm font-medium text-green-700">Payment confirmed</p><p className="mt-4 text-xs leading-5 text-gray-500">Courier tracking updates will appear when a carrier integration is connected.</p></div>
             </section>
-            <Link href="/products" className="mt-6 inline-flex h-11 items-center rounded bg-[#294334] px-5 text-sm font-semibold text-white hover:bg-[#1e3327]">Continue shopping</Link>
+            <Link href={storefrontHref} className="mt-6 inline-flex h-11 items-center rounded bg-[#294334] px-5 text-sm font-semibold text-white hover:bg-[#1e3327]">Continue shopping</Link>
           </>
         ) : (
           <div className="border border-gray-200 bg-white p-8 text-center">
             <h1 className="text-xl font-semibold text-gray-900">Order details unavailable</h1>
             <p className="mt-2 text-sm text-gray-600">{error || 'Only confirmed orders belonging to your account can be displayed.'}</p>
-            <Link href="/products" className="mt-5 inline-flex h-10 items-center rounded bg-[#294334] px-5 text-sm font-semibold text-white">Browse products</Link>
+            <Link href={storefrontHref} className="mt-5 inline-flex h-10 items-center rounded bg-[#294334] px-5 text-sm font-semibold text-white">Browse products</Link>
           </div>
         )}
       </div>

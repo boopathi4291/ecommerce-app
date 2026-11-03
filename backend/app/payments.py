@@ -37,6 +37,7 @@ class PaymentGateway(Protocol):
         currency: str,
         method: PaymentMethod,
         idempotency_key: str,
+        provider: str | None,
         success_url: str,
         cancel_url: str,
     ) -> CheckoutSession: ...

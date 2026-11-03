@@ -1,6 +1,7 @@
 'use client'
 
 import { FormEvent, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ArrowRight, Eye, EyeOff, Leaf, Lock } from 'lucide-react'
 import { getDemoSession, signInDemo, signInWithDemoProvider, signUpDemo } from '@/lib/demoAuth'
@@ -22,13 +23,18 @@ export default function HomePage() {
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [storeSlug, setStoreSlug] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    if (getDemoSession()) {
-      router.replace(takeReturnPath())
+    const activeUser = getDemoSession()
+    if (activeUser) {
+      const tenantPath = activeUser.tenantSlug
+        ? `/${activeUser.tenantSlug}/${activeUser.role === 'tenant_admin' ? 'admin' : 'products'}`
+        : takeReturnPath()
+      router.replace(tenantPath)
       return
     }
     if (sessionStorage.getItem('atelier.demo.authMode') === 'signup') setMode('signup')
@@ -46,7 +52,7 @@ export default function HomePage() {
     if (!isEmail && !isMobile) return setError('Enter a valid email address or mobile number.')
     if (mode === 'signup') {
       if (!firstName.trim() || !lastName.trim()) return setError('Enter your first and last name.')
-      if (password.length < 8) return setError('Use a password with at least 8 characters.')
+      if (password.length < 10) return setError('Use a password with at least 10 characters.')
       if (password !== confirmPassword) return setError('Your passwords do not match.')
     }
 
@@ -98,7 +104,14 @@ export default function HomePage() {
           <h2 className="mt-3 text-3xl font-semibold text-[#20251f]">{mode === 'login' ? 'Welcome back' : 'Create your account'}</h2>
           <p className="mt-2 text-sm text-[#73796f]">{mode === 'login' ? 'Sign in to find your next favourite.' : 'Join us for a more personal kind of shopping.'}</p>
 
-          <div className="mt-8 grid grid-cols-2 border-b border-[#dfe2d9] text-sm">
+          <div className="mt-6 border border-[#dfe2d9] bg-white p-4">
+            <label className="block space-y-1.5 text-xs font-semibold text-[#4c554b]">Already shop with a HomeComing store?
+              <span className="mt-1 flex h-10 rounded border border-[#dfe2d9] focus-within:border-[#55705a]"><span className="flex items-center pl-3 text-xs text-gray-500">homecoming.com/</span><input value={storeSlug} onChange={(event) => setStoreSlug(event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))} placeholder="clientabc" className="min-w-0 flex-1 bg-transparent px-1 text-sm font-normal outline-none" /><button type="button" disabled={!storeSlug} onClick={() => router.push(`/${storeSlug}/login`)} className="px-3 text-xs font-semibold text-[#294334] disabled:opacity-40">Open</button></span>
+            </label>
+            <Link href="/register-store" className="mt-3 inline-block text-xs font-semibold text-[#294334] underline underline-offset-2">Create a store</Link>
+          </div>
+
+          <div className="mt-6 grid grid-cols-2 border-b border-[#dfe2d9] text-sm">
             <button type="button" onClick={() => { setMode('login'); setError('') }} className={`border-b-2 px-3 pb-3 font-semibold transition ${mode === 'login' ? 'border-[#294334] text-[#294334]' : 'border-transparent text-[#858b80]'}`}>Log in</button>
             <button type="button" onClick={() => { setMode('signup'); setError('') }} className={`border-b-2 px-3 pb-3 font-semibold transition ${mode === 'signup' ? 'border-[#294334] text-[#294334]' : 'border-transparent text-[#858b80]'}`}>Sign up</button>
           </div>
@@ -125,7 +138,7 @@ export default function HomePage() {
             <label className="block space-y-1.5 text-xs font-semibold text-[#4c554b]">Password
               <span className="relative block">
                 <Lock size={16} className="absolute left-3 top-3.5 text-[#8b9388]" />
-                <input autoComplete={mode === 'login' ? 'current-password' : 'new-password'} type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 8 characters" className="h-11 w-full rounded border border-[#dfe2d9] bg-white pl-10 pr-11 text-sm font-normal outline-none placeholder:text-[#a1a69e] focus:border-[#55705a]" required />
+                <input autoComplete={mode === 'login' ? 'current-password' : 'new-password'} type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 10 characters" className="h-11 w-full rounded border border-[#dfe2d9] bg-white pl-10 pr-11 text-sm font-normal outline-none placeholder:text-[#a1a69e] focus:border-[#55705a]" required minLength={mode === 'signup' ? 10 : 1} />
                 <button type="button" aria-label={showPassword ? 'Hide password' : 'Show password'} onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3 text-[#8b9388]">{showPassword ? <EyeOff size={17} /> : <Eye size={17} />}</button>
               </span>
             </label>

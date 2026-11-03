@@ -1,6 +1,6 @@
 # HomeComing
 
-HomeComing is an ecommerce prototype with a Next.js frontend and a FastAPI backend. Backend development is on branch `feature/fastapi-backend`, based on the pushed UI commit.
+HomeComing is an ecommerce prototype with a Next.js frontend and FastAPI backend. Multi-tenant administration is developed on branch `feature/tenant-admin`, based on the FastAPI implementation.
 
 ## FastAPI development
 
@@ -13,7 +13,7 @@ python -m pip install -e '.[dev]'
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Interactive API documentation is available at `http://localhost:8000/docs`; liveness and database readiness are `/healthz` and `/readyz`. The development default is SQLite. The Docker Compose backend uses PostgreSQL. `Base.metadata.create_all` is currently used for prototype startup; add and run Alembic migrations before deploying schema changes to production.
+Interactive API documentation is available at `http://localhost:8000/docs`; liveness and database readiness are `/healthz` and `/readyz`. The development default is SQLite. The Docker Compose backend uses PostgreSQL. Alembic applies the tenant schema migration at startup; continue using versioned migrations for future schema changes.
 
 ## API routes
 
@@ -29,12 +29,17 @@ All application routes are under `/api/v1`.
 | Checkout | `POST /checkout` with an `Idempotency-Key` header |
 | Payments | `GET /payments/{payment_id}`, `POST /payments/{payment_id}/reconcile`, `POST /payments/webhooks/{provider}` |
 | Orders | `GET /orders`, `GET /orders/{order_id}`, `GET /orders/{order_id}/tracking`, `POST /orders/{order_id}/refund` with an `Idempotency-Key` header |
+| Tenants | `POST /tenants`, `GET /tenants/{slug}`, `POST /tenants/{slug}/auth/login`, `POST /tenants/{slug}/auth/signup` |
+| Tenant storefront | `GET /storefront/{slug}/products`, `GET /storefront/{slug}/products/{product_id}` |
+| Tenant admin | `GET/PATCH /admin/tenant`, `GET/POST /admin/products`, `PATCH/DELETE /admin/products/{product_id}` |
 
-Signup/login use Argon2 password hashing and short-lived JWT access tokens with rotating, server-revocable refresh tokens. Cart, wishlist, and orders are scoped to the authenticated user. Checkout totals are recalculated from database prices, converted server-side to currency minor units, and protected by provider idempotency keys. Only a signature-verified provider webhook or an authenticated provider-side reconciliation response with matching amount and currency can confirm payment and create tracking details. Repeated webhook events are deduplicated.
+Signup/login use Argon2 password hashing and short-lived JWT access tokens with rotating, server-revocable refresh tokens. Tenant admins are isolated by tenant ID and role; products, cart, wishlist, orders, branding, currency, and enabled payment methods are store-scoped. Checkout totals are recalculated from database prices, converted server-side to currency minor units, and protected by provider idempotency keys. Only a signature-verified provider webhook or an authenticated provider-side reconciliation response with matching amount and currency can confirm payment and create tracking details. Repeated webhook events are deduplicated.
 
 ## Frontend integration
 
-Set `NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1` in the frontend environment, then run `npm run dev` in `frontend`. The login/signup forms, catalog, cart, wishlist, checkout session creation, payment status, and order detail view call FastAPI. Public product browsing falls back to the bundled mock catalog if the API is unavailable; protected actions do not fall back to browser-local fake authentication or cart data.
+Set `NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1` in the frontend environment, then run `npm run dev` in `frontend`. Create a store at `/register-store`; its owner gets `/{slug}/admin`, customer/admin sign-in is at `/{slug}/login`, and the public catalog is at `/{slug}/products`. The HomeComing root login has a store-slug opener. Public tenant products and all tenant admin changes use tenant-scoped API routes.
+
+For example, `clientabc` uses `/clientabc/login`, `/clientabc/admin`, and `/clientabc/products`; another store gets its own equivalent path. This prototype routes by path slug on the shared host. Custom DNS domains and TLS provisioning are not included. Tenant registration creates an administrator and a private copy of the starter catalog. Admins can update store name/logo, theme colors, default currency, enabled payment methods, and their own product catalog. Gateway credentials are deliberately not accepted in the admin browser UI.
 
 ## Payments and production security
 

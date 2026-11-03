@@ -9,7 +9,7 @@ from sqlalchemy import delete
 from app.catalog import CATALOG
 from app.database import SessionLocal, initialize_database
 from app.main import app
-from app.models import CartItem, Order, PaymentAttempt, Product, RefreshSession, User, WebhookEvent, WishlistItem
+from app.models import CartItem, Order, PaymentAttempt, Product, RefreshSession, Tenant, User, WebhookEvent, WishlistItem
 from app.payments import CheckoutSession, InvalidPaymentSignature, VerifiedPaymentEvent, get_payment_gateway
 
 
@@ -18,11 +18,11 @@ class FakeGateway:
         self.event: VerifiedPaymentEvent | None = None
         self.refund_calls: list[tuple[str, int, str]] = []
 
-    def create_checkout_session(self, *, order_id, amount, currency, method, idempotency_key, success_url, cancel_url):
+    def create_checkout_session(self, *, order_id, amount, currency, method, idempotency_key, provider, success_url, cancel_url):
         assert f"order_id={order_id}" in success_url
         assert f"payment_id=" in success_url
         assert cancel_url.endswith("/checkout?payment=cancelled")
-        return CheckoutSession(provider=method.value, external_payment_id=f"external-{order_id}", checkout_url=f"https://gateway.test/{order_id}")
+        return CheckoutSession(provider=provider or method.value, external_payment_id=f"external-{order_id}", checkout_url=f"https://gateway.test/{order_id}")
 
     def verify_webhook(self, *, provider, payload, signature):
         expected = hmac.new(b"fake-signing-secret", payload, hashlib.sha256).hexdigest()
@@ -53,6 +53,8 @@ def client():
     with SessionLocal() as db:
         for model in (WebhookEvent, PaymentAttempt, Order, WishlistItem, CartItem, RefreshSession, User):
             db.execute(delete(model))
+        db.execute(delete(Product).where(Product.tenant_id.is_not(None)))
+        db.execute(delete(Tenant))
         for item in CATALOG:
             db.get(Product, item["id"]).stock = item["stock"]
         db.commit()
@@ -269,3 +271,86 @@ def test_live_payment_disabled_by_default(client):
     response = make_checkout(api, token, key="another-idempotency-key-002")
     assert response.status_code == 503
     assert api.get("/api/v1/orders", headers=auth_headers(token)).json() == []
+
+
+def register_tenant(client, slug: str, email: str):
+    response = client.post("/api/v1/tenants", json={
+        "company_name": f"{slug.title()} Store",
+        "slug": slug,
+        "admin_first_name": "Store",
+        "admin_last_name": "Owner",
+        "email": email,
+        "password": "tenant-admin-password-2026",
+    })
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def test_tenant_routes_brand_settings_and_admin_product_crud(client):
+    api, _ = client
+    tenant_a = register_tenant(api, "clientabc", "owner@example.com")
+    tenant_b = register_tenant(api, "clientxyz", "owner@example.com")
+    token_a = tenant_a["access_token"]
+    token_b = tenant_b["access_token"]
+    assert api.post("/api/v1/auth/login", json={"email_or_mobile": "owner@example.com", "password": "tenant-admin-password-2026"}).status_code == 401
+    assert api.post("/api/v1/tenants/clientxyz/auth/login", json={"email_or_mobile": "owner@example.com", "password": "tenant-admin-password-2026"}).status_code == 200
+
+    assert api.get("/api/v1/tenants/clientabc").json()["name"] == "Clientabc Store"
+    products_a = api.get("/api/v1/storefront/clientabc/products")
+    products_b = api.get("/api/v1/storefront/clientxyz/products")
+    assert products_a.status_code == products_b.status_code == 200
+    assert len(products_a.json()) == len(products_b.json()) == 12
+    assert products_a.json()[0]["id"] != products_b.json()[0]["id"]
+    assert len(api.get("/api/v1/products?limit=100").json()) == 12
+
+    assert api.get("/api/v1/admin/tenant", headers=auth_headers(token_a)).status_code == 200
+    assert api.get("/api/v1/admin/tenant", headers=auth_headers(token_b)).status_code == 200
+    settings = api.patch("/api/v1/admin/tenant", headers=auth_headers(token_a), json={
+        "name": "Client ABC",
+        "theme_settings": {"primary": "#155EEF", "background": "#FFFFFF"},
+        "enabled_payment_methods": ["paypal", "card"],
+        "default_currency": "USD",
+        "payment_provider": "stripe",
+    })
+    assert settings.status_code == 200, settings.text
+    assert settings.json()["enabled_payment_methods"] == ["paypal", "card"]
+    assert api.get("/api/v1/tenants/clientabc").json()["theme_settings"]["primary"] == "#155EEF"
+    assert api.get("/api/v1/tenants/clientxyz").json()["default_currency"] == "INR"
+    assert api.patch("/api/v1/admin/tenant", headers=auth_headers(token_a), json={"theme_settings": {"primary": "blue"}}).status_code == 422
+
+    created = api.post("/api/v1/admin/products", headers=auth_headers(token_a), json={
+        "name": "Client ABC Exclusive", "description": "Tenant only", "category": "Fashion",
+        "price": 500, "original_price": 700, "image": "https://example.com/product.png", "stock": 4,
+    })
+    assert created.status_code == 201, created.text
+    product_id = created.json()["id"]
+    assert api.get(f"/api/v1/admin/products", headers=auth_headers(token_b)).status_code == 200
+    assert all(product["name"] != "Client ABC Exclusive" for product in api.get("/api/v1/admin/products", headers=auth_headers(token_b)).json())
+    assert api.patch(f"/api/v1/admin/products/{product_id}", headers=auth_headers(token_b), json={"price": 1}).status_code == 404
+    assert api.patch(f"/api/v1/admin/products/{product_id}", headers=auth_headers(token_a), json={"price": 600}).json()["price"] == 600
+
+    customer = api.post("/api/v1/tenants/clientabc/auth/signup", json={
+        "email_or_mobile": "customer@example.com", "first_name": "Store", "last_name": "Customer", "password": "customer-password-2026",
+    })
+    assert customer.status_code == 201
+    assert api.get("/api/v1/admin/tenant", headers=auth_headers(customer.json()["access_token"])).status_code == 403
+    foreign_product_id = products_b.json()[0]["id"]
+    assert api.post("/api/v1/cart/items", headers=auth_headers(customer.json()["access_token"]), json={"product_id": foreign_product_id, "quantity": 1}).status_code == 404
+    global_user_token, _ = create_account(api, "global-customer@example.com")
+    assert api.post("/api/v1/cart/items", headers=auth_headers(global_user_token), json={"product_id": foreign_product_id, "quantity": 1}).status_code == 404
+
+
+def test_tenant_checkout_enforces_configured_payment_and_currency(client):
+    api, _ = client
+    tenant = register_tenant(api, "clientpay", "payments@example.com")
+    token = tenant["access_token"]
+    product = api.get("/api/v1/storefront/clientpay/products").json()[0]
+    assert api.post("/api/v1/cart/items", headers=auth_headers(token), json={"product_id": product["id"], "quantity": 1}).status_code == 200
+    shipping = {
+        "full_name": "Store Owner", "email": "payments@example.com", "mobile": "+919876543210",
+        "address": "12 Store Street", "city": "Chennai", "postal_code": "600001",
+    }
+    denied_method = api.post("/api/v1/checkout", headers={**auth_headers(token), "Idempotency-Key": "tenant-disabled-method-key"}, json={"payment_method": "zelle", "currency": "INR", "shipping": shipping})
+    assert denied_method.status_code == 422
+    denied_currency = api.post("/api/v1/checkout", headers={**auth_headers(token), "Idempotency-Key": "tenant-disabled-currency-key"}, json={"payment_method": "upi", "currency": "USD", "shipping": shipping})
+    assert denied_currency.status_code == 422

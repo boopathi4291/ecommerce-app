@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import get_db, initialize_database
-from app.routers import auth, cart, checkout, orders, payments, products, wishlist
+from app.routers import auth, cart, checkout, orders, payments, products, tenants, wishlist
 
 
 @asynccontextmanager
@@ -34,6 +34,8 @@ app.include_router(checkout.router, prefix=api)
 app.include_router(payments.router, prefix=api)
 app.include_router(orders.router, prefix=api)
 app.include_router(wishlist.router, prefix=api)
+app.include_router(tenants.router, prefix=api)
+app.include_router(tenants.admin_router, prefix=api)
 
 
 @app.get("/healthz", tags=["health"])

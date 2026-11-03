@@ -8,7 +8,7 @@ import { getDemoSession, DemoUser } from '@/lib/demoAuth'
 import { formatCurrency } from '@/lib/formatCurrency'
 import { currencyOptions, languageOptions, localeByLanguage } from '@/lib/locales'
 import { CartLine, PaymentMethod, ShippingDetails } from '@/types/checkout'
-import { apiProductToProduct, apiRequest, ApiCart } from '@/lib/api'
+import { apiProductToProduct, apiRequest, ApiCart, ApiTenant } from '@/lib/api'
 
 const paymentOptions: { value: PaymentMethod; label: string; detail: string }[] = [
   { value: 'upi', label: 'UPI', detail: 'UPI app or UPI ID' },
@@ -25,6 +25,7 @@ export default function CheckoutPage() {
   const [locale, setLocale] = useState('en-IN')
   const [shipping, setShipping] = useState<ShippingDetails>({ fullName: '', email: '', mobile: '', address: '', city: '', postalCode: '' })
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('upi')
+  const [enabledPaymentMethods, setEnabledPaymentMethods] = useState<string[]>(paymentOptions.map((option) => option.value))
   const [error, setError] = useState('')
   const [processing, setProcessing] = useState(false)
   const [ready, setReady] = useState(false)
@@ -40,7 +41,17 @@ export default function CheckoutPage() {
     }
     const savedCurrency = currencyOptions.find((option) => option.code === sessionStorage.getItem('atelier.demo.currency'))
     const savedLanguage = languageOptions.find((option) => option.code === sessionStorage.getItem('atelier.demo.language'))
-    setCurrency(savedCurrency?.code ?? 'INR')
+    if (activeUser?.tenantSlug) {
+      void apiRequest<ApiTenant>(`/tenants/${encodeURIComponent(activeUser.tenantSlug)}`)
+        .then((tenant) => {
+          setCurrency(tenant.default_currency)
+          setEnabledPaymentMethods(tenant.enabled_payment_methods)
+          setPaymentMethod((current) => tenant.enabled_payment_methods.includes(current)
+            ? current
+            : tenant.enabled_payment_methods[0] as PaymentMethod)
+        })
+        .catch(() => setCurrency(savedCurrency?.code ?? 'INR'))
+    } else setCurrency(savedCurrency?.code ?? 'INR')
     setLocale(savedLanguage ? localeByLanguage[savedLanguage.code] : 'en-IN')
     if (activeUser) {
       setShipping((current) => ({
@@ -56,6 +67,7 @@ export default function CheckoutPage() {
   }, [])
 
   const subtotal = cart.reduce((sum, line) => sum + line.product.price * line.quantity, 0)
+  const storefrontHref = user?.tenantSlug ? `/${user.tenantSlug}/products` : '/products'
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -116,7 +128,7 @@ export default function CheckoutPage() {
         ) : cart.length === 0 ? (
           <div className="mt-8 border border-gray-200 bg-white p-8 text-center">
             <h2 className="font-semibold text-gray-900">Your cart is empty</h2>
-            <Link href="/products" className="mt-4 inline-flex h-10 items-center rounded bg-[#294334] px-5 text-sm font-semibold text-white">Browse products</Link>
+            <Link href={storefrontHref} className="mt-4 inline-flex h-10 items-center rounded bg-[#294334] px-5 text-sm font-semibold text-white">Browse products</Link>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="mt-8 grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -136,7 +148,7 @@ export default function CheckoutPage() {
               <section className="border border-gray-200 bg-white p-5 sm:p-6">
                 <h2 className="text-lg font-semibold text-gray-900">Payment method</h2>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  {paymentOptions.map((option) => (
+                  {paymentOptions.filter((option) => enabledPaymentMethods.includes(option.value)).map((option) => (
                     <label key={option.value} className={`flex cursor-pointer items-start gap-3 border p-4 ${paymentMethod === option.value ? 'border-[#294334] bg-[#f4f7f3]' : 'border-gray-200 hover:border-gray-400'}`}>
                       <input type="radio" name="paymentMethod" value={option.value} checked={paymentMethod === option.value} onChange={() => setPaymentMethod(option.value)} className="mt-1 accent-[#294334]" />
                       <span><span className="block text-sm font-semibold text-gray-900">{option.label}</span><span className="mt-1 block text-xs leading-5 text-gray-500">{option.detail}</span></span>

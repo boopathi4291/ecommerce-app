@@ -38,6 +38,8 @@ def add_cart_item(
     product = db.get(Product, payload.product_id)
     if product is None or not product.is_active:
         raise HTTPException(status_code=404, detail="Product not found")
+    if product.tenant_id != user.tenant_id:
+        raise HTTPException(status_code=404, detail="Product not found")
     if product.stock == 0:
         raise HTTPException(status_code=409, detail="Product is out of stock")
 
@@ -48,7 +50,7 @@ def add_cart_item(
     if item:
         item.quantity = requested_quantity
     else:
-        db.add(CartItem(user_id=user.id, product_id=product.id, quantity=payload.quantity))
+        db.add(CartItem(tenant_id=user.tenant_id, user_id=user.id, product_id=product.id, quantity=payload.quantity))
     db.commit()
     return serialize_cart(db, user.id)
 

@@ -28,9 +28,11 @@ def add_to_wishlist(product_id: int, user: User = Depends(get_current_user), db:
     product = db.get(Product, product_id)
     if product is None or not product.is_active:
         raise HTTPException(status_code=404, detail="Product not found")
+    if product.tenant_id != user.tenant_id:
+        raise HTTPException(status_code=404, detail="Product not found")
     exists = db.scalar(select(WishlistItem.id).where(WishlistItem.user_id == user.id, WishlistItem.product_id == product_id))
     if exists is None:
-        db.add(WishlistItem(user_id=user.id, product_id=product_id))
+        db.add(WishlistItem(tenant_id=user.tenant_id, user_id=user.id, product_id=product_id))
         try:
             db.commit()
         except IntegrityError:

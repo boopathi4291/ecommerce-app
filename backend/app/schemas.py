@@ -18,6 +18,8 @@ class UserPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
+    tenant_id: str | None
+    role: str
     email: str | None
     mobile: str | None
     first_name: str
@@ -55,6 +57,65 @@ class TokenPair(BaseModel):
     token_type: str = "bearer"
     expires_in: int
     user: UserPublic
+
+
+class TenantPublic(BaseModel):
+    id: str
+    slug: str
+    name: str
+    logo_url: str | None
+    theme_settings: dict
+    enabled_payment_methods: list[str]
+    default_currency: str
+    payment_provider: str
+
+
+class TenantAuthResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    user: UserPublic
+    tenant: TenantPublic
+
+
+class TenantRegistrationRequest(BaseModel):
+    company_name: str = Field(min_length=2, max_length=120)
+    slug: str = Field(min_length=3, max_length=63, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+    admin_first_name: str = Field(min_length=1, max_length=80)
+    admin_last_name: str = Field(min_length=1, max_length=80)
+    email: str = Field(min_length=5, max_length=320)
+    password: str = Field(min_length=10, max_length=128)
+
+
+class TenantSettingsPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=120)
+    logo_url: str | None = Field(default=None, max_length=1000)
+    theme_settings: dict[str, str] | None = None
+    enabled_payment_methods: list[PaymentMethod] | None = Field(default=None, min_length=1)
+    default_currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
+    payment_provider: str | None = Field(default=None, pattern=r"^[a-z0-9-]{2,32}$")
+
+
+class TenantProductCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=180)
+    description: str = Field(default="", max_length=2000)
+    category: str = Field(min_length=2, max_length=80)
+    price: int = Field(ge=0)
+    original_price: int | None = Field(default=None, ge=0)
+    image: str = Field(min_length=8, max_length=1000)
+    stock: int = Field(default=0, ge=0, le=1_000_000)
+
+
+class TenantProductPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=180)
+    description: str | None = Field(default=None, max_length=2000)
+    category: str | None = Field(default=None, min_length=2, max_length=80)
+    price: int | None = Field(default=None, ge=0)
+    original_price: int | None = Field(default=None, ge=0)
+    image: str | None = Field(default=None, min_length=8, max_length=1000)
+    stock: int | None = Field(default=None, ge=0, le=1_000_000)
+    is_active: bool | None = None
 
 
 class ProductOut(BaseModel):

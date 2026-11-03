@@ -5,6 +5,8 @@ const REFRESH_TOKEN_KEY = 'homecoming.api.refresh'
 
 export interface ApiUser {
   id: string
+  tenant_id: string | null
+  role: 'customer' | 'tenant_admin'
   email: string | null
   mobile: string | null
   first_name: string
@@ -35,12 +37,24 @@ export interface ApiCart {
   currency: string
 }
 
+export interface ApiTenant {
+  id: string
+  slug: string
+  name: string
+  logo_url: string | null
+  theme_settings: Record<string, string>
+  enabled_payment_methods: string[]
+  default_currency: string
+  payment_provider: string
+}
+
 interface TokenResponse {
   access_token: string
   refresh_token: string
   token_type: 'bearer'
   expires_in: number
   user: ApiUser
+  tenant?: { id: string; slug: string; name: string; logo_url: string | null; theme_settings: Record<string, string>; enabled_payment_methods: string[]; default_currency: string; payment_provider: string }
 }
 
 function saveTokens(tokens: TokenResponse): void {
@@ -101,6 +115,32 @@ export async function apiAuth(path: '/auth/signup' | '/auth/login', body: Record
   const tokens = await response.json() as TokenResponse
   saveTokens(tokens)
   return tokens.user
+}
+
+export async function apiTenantAuth(slug: string, path: 'login' | 'signup', body: Record<string, string>): Promise<{ user: ApiUser; tenant: NonNullable<TokenResponse['tenant']> }> {
+  const response = await fetch(`${API_BASE}/tenants/${encodeURIComponent(slug)}/auth/${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) throw await decodeError(response)
+  const tokens = await response.json() as TokenResponse
+  if (!tokens.tenant) throw new Error('Tenant authentication response is missing store details.')
+  saveTokens(tokens)
+  return { user: tokens.user, tenant: tokens.tenant }
+}
+
+export async function registerTenant(body: Record<string, string>): Promise<{ user: ApiUser; tenant: NonNullable<TokenResponse['tenant']> }> {
+  const response = await fetch(`${API_BASE}/tenants`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) throw await decodeError(response)
+  const tokens = await response.json() as TokenResponse
+  if (!tokens.tenant) throw new Error('Tenant registration response is missing store details.')
+  saveTokens(tokens)
+  return { user: tokens.user, tenant: tokens.tenant }
 }
 
 export async function clearApiSession(): Promise<void> {

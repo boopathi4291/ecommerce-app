@@ -1,13 +1,13 @@
 from collections.abc import Generator
+from pathlib import Path
 
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.config import get_settings
-from app.models import Base
-
-
 settings = get_settings()
 engine_options: dict = {"pool_pre_ping": True}
 if settings.database_url.startswith("sqlite"):
@@ -25,9 +25,9 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def initialize_database() -> None:
-    import app.models  # noqa: F401
+    migration_config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+    migration_config.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"))
+    command.upgrade(migration_config, "head")
     from app.catalog import seed_catalog
-
-    Base.metadata.create_all(bind=engine)
     with SessionLocal() as session:
         seed_catalog(session)

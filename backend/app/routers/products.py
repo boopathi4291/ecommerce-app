@@ -18,7 +18,7 @@ def list_products(
     limit: int = Query(default=24, ge=1, le=100),
     db: Session = Depends(get_db),
 ) -> list[Product]:
-    query = select(Product).where(Product.is_active.is_(True))
+    query = select(Product).where(Product.is_active.is_(True), Product.tenant_id.is_(None))
     if category:
         query = query.where(Product.category.ilike(category.strip()))
     if search:
@@ -28,7 +28,7 @@ def list_products(
 
 @router.get("/{product_id}", response_model=ProductOut)
 def get_product(product_id: int, db: Session = Depends(get_db)) -> Product:
-    product = db.get(Product, product_id)
-    if product is None or not product.is_active:
+    product = db.scalar(select(Product).where(Product.id == product_id, Product.tenant_id.is_(None), Product.is_active.is_(True)))
+    if product is None:
         raise HTTPException(status_code=404, detail="Product not found")
     return product
